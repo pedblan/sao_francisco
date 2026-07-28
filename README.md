@@ -144,6 +144,18 @@ O script cria um aplicativo macOS nativo, assinado ad hoc para testes locais, e 
 distribui em arquivos ZIP e DMG na pasta `dist/`. O FFmpeg e o FFprobe continuam sendo
 dependências do sistema; o yt-dlp é incorporado ao aplicativo.
 
+### Build para Windows x64
+
+Em um computador Windows 10 ou 11 com Python 3.13:
+
+```powershell
+.\scripts\build_windows_x64.ps1
+```
+
+O script cria um pacote portátil em `dist/`, inclui FFmpeg, FFprobe e Deno, testa o
+executável antes e depois da compactação e gera um único arquivo ZIP. A pessoa que baixar
+o pacote só precisa extrair todo o conteúdo antes de abrir `São Francisco.exe`.
+
 ## Custos e direitos
 
 O aplicativo é gratuito, mas os provedores podem cobrar pelo uso de suas APIs. URLs

@@ -1,0 +1,35 @@
+name: Pacote Windows
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Obter o código
+        uses: actions/checkout@v5
+
+      - name: Preparar Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          architecture: x64
+          cache: pip
+
+      - name: Construir e validar o pacote portátil
+        shell: pwsh
+        run: ./scripts/build_windows_x64.ps1 -PythonBin python
+
+      - name: Guardar o ZIP
+        uses: actions/upload-artifact@v6
+        with:
+          name: Sao-Francisco-0.1.1-windows-x64
+          path: dist/Sao-Francisco-0.1.1-windows-x64.zip
+          if-no-files-found: error
+          retention-days: 7

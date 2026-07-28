@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -19,7 +20,11 @@ from sao_francisco.core import (
     parse_srt,
     parse_vtt,
 )
-from sao_francisco.core.media import _default_ytdlp_command, _resolve_executable
+from sao_francisco.core.media import (
+    _default_ytdlp_command,
+    _resolve_executable,
+    _subprocess_environment,
+)
 
 SAMPLE_VTT = """WEBVTT
 
@@ -348,3 +353,16 @@ def test_default_ytdlp_command_uses_bundled_executable_when_frozen(
         "/Applications/São Francisco.app/Contents/MacOS/São Francisco",
         "--yt-dlp",
     )
+
+
+def test_frozen_application_directory_is_first_on_media_path(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    executable = tmp_path / "São Francisco.exe"
+    monkeypatch.setattr("sao_francisco.core.media.sys.frozen", True, raising=False)
+    monkeypatch.setattr("sao_francisco.core.media.sys.executable", str(executable))
+
+    search_path = _subprocess_environment()["PATH"].split(os.pathsep)
+
+    assert search_path[0] == str(tmp_path)

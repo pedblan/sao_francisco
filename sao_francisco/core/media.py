@@ -926,11 +926,14 @@ class MediaProcessor:
 def _subprocess_environment() -> dict[str, str]:
     environment = dict(os.environ)
     current = environment.get("PATH", "")
-    directories = [
+    directories: list[str] = []
+    if getattr(sys, "frozen", False):
+        directories.append(str(Path(sys.executable).resolve().parent))
+    directories.extend(
         directory
         for directory in _MACOS_TOOL_DIRECTORIES
         if Path(directory).is_dir()
-    ]
+    )
     if current:
         directories.extend(part for part in current.split(os.pathsep) if part)
     environment["PATH"] = os.pathsep.join(dict.fromkeys(directories))

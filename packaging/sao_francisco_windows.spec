@@ -1,5 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""PyInstaller recipe for the native Apple Silicon application bundle."""
+"""PyInstaller recipe for the portable Windows x64 application."""
 
 from pathlib import Path
 
@@ -9,7 +9,6 @@ from PyInstaller.utils.hooks import collect_submodules
 PROJECT_ROOT = Path(SPECPATH).resolve().parent
 PACKAGE_ROOT = PROJECT_ROOT / "sao_francisco"
 APP_NAME = "São Francisco"
-EXECUTABLE_NAME = "sao-francisco"
 APP_ICON = PACKAGE_ROOT / "assets" / "branding" / "sao-francisco-macos.png"
 
 datas = [
@@ -21,7 +20,6 @@ datas = [
 ]
 hiddenimports = sorted(
     {
-        "Security",
         *collect_submodules("google.genai"),
         *collect_submodules("openai"),
         *collect_submodules("yt_dlp"),
@@ -48,15 +46,13 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name=EXECUTABLE_NAME,
+    name=APP_NAME,
+    icon=str(APP_ICON),
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=False,
     console=False,
-    target_arch="arm64",
-    codesign_identity=None,
-    entitlements_file=None,
 )
 coll = COLLECT(
     exe,
@@ -66,20 +62,4 @@ coll = COLLECT(
     upx=False,
     upx_exclude=[],
     name=APP_NAME,
-)
-app = BUNDLE(
-    coll,
-    name=f"{APP_NAME}.app",
-    icon=str(APP_ICON),
-    bundle_identifier="com.pedblan.saofrancisco",
-    info_plist={
-        "CFBundleDisplayName": APP_NAME,
-        "CFBundleName": APP_NAME,
-        "CFBundleShortVersionString": "0.1.1",
-        "CFBundleVersion": "1",
-        "LSApplicationCategoryType": "public.app-category.utilities",
-        "LSArchitecturePriority": ["arm64"],
-        "LSMinimumSystemVersion": "12.0",
-        "NSHighResolutionCapable": True,
-    },
 )
