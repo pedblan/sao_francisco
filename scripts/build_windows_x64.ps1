@@ -155,6 +155,23 @@ A Ajuda do aplicativo explica como obter uma chave e como começar.
     if ($env:KEEP_BUILD_TEMP -eq "1") {
         Write-Host "Diretório temporário preservado em: $TemporaryRoot"
     } elseif (Test-Path $TemporaryRoot) {
-        Remove-Item $TemporaryRoot -Recurse -Force
+        # O Windows pode manter uma DLL do Qt bloqueada por alguns instantes
+        # depois do teste de abertura. A limpeza temporária não deve invalidar
+        # um pacote que já passou por todas as verificações.
+        for ($Attempt = 1; $Attempt -le 3; $Attempt++) {
+            try {
+                Remove-Item $TemporaryRoot -Recurse -Force
+                break
+            } catch {
+                if ($Attempt -eq 3) {
+                    Write-Warning (
+                        "Não foi possível apagar todos os arquivos temporários: " +
+                        $_.Exception.Message
+                    )
+                } else {
+                    Start-Sleep -Seconds 2
+                }
+            }
+        }
     }
 }
