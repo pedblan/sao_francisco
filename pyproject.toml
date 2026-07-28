@@ -1,0 +1,79 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sao-francisco"
+version = "0.1.0"
+description = "Aplicativo Qt 6 para transcrever mídias longas com retomada segura."
+readme = "README.md"
+requires-python = ">=3.11,<3.14"
+license = "MIT"
+license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md"]
+authors = [
+  { name = "Pedro Duarte Blanco" },
+]
+dependencies = [
+  "google-genai>=2.11.0,<3.0.0",
+  "openai>=1.109.0,<3.0.0",
+  "PySide6>=6.8.0,<6.10.0",
+  "pyobjc-framework-Security>=12.2.1,<13.0.0; sys_platform == 'darwin'",
+  "python-docx>=1.2.0,<2.0.0",
+  "yt-dlp[default]>=2026.7.4,<2027.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "build>=1.2,<2",
+  "mypy>=1.15,<2",
+  "pyinstaller>=6.14,<7",
+  "pytest>=8.4,<9",
+  "ruff>=0.12,<1",
+]
+
+[project.gui-scripts]
+sao-francisco = "sao_francisco.app:main"
+
+[project.urls]
+Homepage = "https://pedblan.github.io"
+Repository = "https://github.com/pedblan/sao_francisco"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+include = ["sao_francisco*"]
+
+[tool.setuptools.package-data]
+sao_francisco = [
+  "AJUDA.md",
+  "THIRD_PARTY_NOTICES.md",
+  "assets/**/*",
+  "licenses/**/*",
+  "qml/**/*.qml",
+  "qml/*.md",
+  "qml/qmldir",
+]
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 99
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.11"
+check_untyped_defs = true
+disallow_untyped_defs = true
+no_implicit_optional = true
+warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+module = "sao_francisco.backend"
+# PySide6 aceita nomes de metatipos Qt como strings; os stubs tipam apenas classes Python.
+disable_error_code = ["arg-type"]

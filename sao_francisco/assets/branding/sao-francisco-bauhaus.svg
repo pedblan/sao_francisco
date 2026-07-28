@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">São Francisco em estilo Bauhaus</title>
+  <desc id="desc">Figura geométrica de São Francisco com hábito escuro, barba clara, olhos verdes e um livro.</desc>
+  <rect width="512" height="512" rx="92" fill="#F4EDDF"/>
+  <circle cx="256" cy="88" r="142" fill="#D09A3A"/>
+  <rect x="0" y="268" width="128" height="244" fill="#A65E3D"/>
+  <circle cx="430" cy="152" r="58" fill="#3F684C"/>
+  <path d="M128 512V284c0-112 56-186 128-186s128 74 128 186v228z" fill="#1B2520"/>
+  <ellipse cx="256" cy="191" rx="66" ry="75" fill="#D8A06F"/>
+  <path d="M194 206c8 87 34 128 62 128s54-41 62-128c-20 17-39 24-62 24s-42-7-62-24z" fill="#F4E7CF"/>
+  <circle cx="231" cy="184" r="7" fill="#3F684C"/>
+  <circle cx="281" cy="184" r="7" fill="#3F684C"/>
+  <path d="M244 212c8 6 16 6 24 0" fill="none" stroke="#A65E3D" stroke-width="6" stroke-linecap="round"/>
+  <path d="M165 177c17-76 54-108 91-108s74 32 91 108c-29-21-59-31-91-31s-62 10-91 31z" fill="#1B2520"/>
+  <rect x="180" y="352" width="152" height="112" rx="13" fill="#FFF9EF" stroke="#A65E3D" stroke-width="8"/>
+  <path d="M256 360v96M197 381h42M273 381h42" stroke="#D8C8B0" stroke-width="5" stroke-linecap="round"/>
+</svg>
