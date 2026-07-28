@@ -45,6 +45,14 @@ def test_text_and_caption_exports_are_utf8_and_timed(tmp_path, transcript) -> No
     assert "<v Ana>Bom dia.</v>" in vtt.read_text(encoding="utf-8")
 
 
+def test_untimed_text_merges_caption_cues_into_readable_paragraphs(
+    tmp_path, transcript
+) -> None:
+    txt = export_txt(transcript, tmp_path / "fala-sem-tempos.txt")
+
+    assert txt.read_text(encoding="utf-8") == "Ana: Bom dia.\n\nTudo bem?\n"
+
+
 def test_generic_export_uses_suffix_and_rejects_unknown_format(
     tmp_path, transcript
 ) -> None:

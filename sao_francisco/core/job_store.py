@@ -178,6 +178,19 @@ class JobStore:
             raise ValueError("chunk_index must not be negative")
         return self.job_directory(job_id) / "results" / f"chunk-{chunk_index:06d}.json"
 
+    def original_result_path(self, job_id: str) -> Path:
+        return self.job_directory(job_id) / "assembled" / "original.json"
+
+    def editorial_plan_path(self, job_id: str) -> Path:
+        return self.job_directory(job_id) / "editorial" / "plan.json"
+
+    def editorial_result_path(self, job_id: str, block_id: str) -> Path:
+        self._validate_unit_id(block_id)
+        return self.job_directory(job_id) / "editorial" / "results" / f"{block_id}.json"
+
+    def improved_result_path(self, job_id: str) -> Path:
+        return self.job_directory(job_id) / "assembled" / "improved.json"
+
     def create_job(
         self,
         *,
@@ -273,16 +286,13 @@ class JobStore:
             completed = manifest.completed_chunks | {chunk_index}
             errors = dict(manifest.chunk_errors)
             errors.pop(chunk_index, None)
-            status = (
-                JobStatus.COMPLETED
-                if len(completed) == len(manifest.chunks)
-                else JobStatus.RUNNING
-            )
             updated = replace(
                 manifest,
                 completed_chunks=frozenset(completed),
                 chunk_errors=errors,
-                status=status,
+                # Completion belongs to the final export, not to the last
+                # provider response.  This keeps crash recovery sequential.
+                status=JobStatus.RUNNING,
                 updated_at=_now(),
             )
             self._write_manifest(updated)
@@ -329,6 +339,79 @@ class JobStore:
     def pending_chunks(self, job_id: str) -> tuple[ChunkSpec, ...]:
         return self.load_job(job_id).pending_chunks
 
+    def save_original_result(self, job_id: str, transcript: Transcript) -> None:
+        with self._lock:
+            self.load_job(job_id)
+            self._atomic_json_write(self.original_result_path(job_id), transcript.to_dict())
+
+    def load_original_result(self, job_id: str) -> Transcript:
+        return self._load_transcript_file(
+            self.original_result_path(job_id),
+            f"job {job_id!r} has no assembled original",
+        )
+
+    def has_original_result(self, job_id: str) -> bool:
+        return self.original_result_path(job_id).is_file()
+
+    def save_editorial_plan(
+        self, job_id: str, value: Mapping[str, Any]
+    ) -> None:
+        with self._lock:
+            self.load_job(job_id)
+            self._atomic_json_write(self.editorial_plan_path(job_id), value)
+
+    def load_editorial_plan(self, job_id: str) -> dict[str, Any]:
+        return self._load_json_object(
+            self.editorial_plan_path(job_id),
+            f"job {job_id!r} has no editorial plan",
+        )
+
+    def has_editorial_plan(self, job_id: str) -> bool:
+        return self.editorial_plan_path(job_id).is_file()
+
+    def save_editorial_result(
+        self,
+        job_id: str,
+        block_id: str,
+        value: Mapping[str, Any],
+    ) -> None:
+        with self._lock:
+            self.load_job(job_id)
+            self._atomic_json_write(
+                self.editorial_result_path(job_id, block_id),
+                value,
+            )
+
+    def load_editorial_results(self, job_id: str) -> dict[str, dict[str, Any]]:
+        root = self.job_directory(job_id) / "editorial" / "results"
+        if not root.is_dir():
+            return {}
+        results: dict[str, dict[str, Any]] = {}
+        for path in sorted(root.glob("*.json")):
+            self._validate_unit_id(path.stem)
+            results[path.stem] = self._load_json_object(
+                path, f"editorial result {path.stem!r} is missing"
+            )
+        return results
+
+    def save_improved_result(self, job_id: str, text: str) -> None:
+        with self._lock:
+            self.load_job(job_id)
+            self._atomic_json_write(
+                self.improved_result_path(job_id),
+                {"text": text},
+            )
+
+    def load_improved_result(self, job_id: str) -> str:
+        value = self._load_json_object(
+            self.improved_result_path(job_id),
+            f"job {job_id!r} has no assembled improved text",
+        )
+        return str(value.get("text") or "").strip()
+
+    def has_improved_result(self, job_id: str) -> bool:
+        return self.improved_result_path(job_id).is_file()
+
     def _reconcile(self, manifest: JobManifest) -> JobManifest:
         discovered = {
             chunk.index
@@ -342,12 +425,10 @@ class JobStore:
         for index in discovered - manifest.completed_chunks:
             self.load_chunk_result(manifest.job_id, index)
         status = (
-            JobStatus.COMPLETED
+            JobStatus.RUNNING
             if len(discovered) == len(manifest.chunks)
             else manifest.status
         )
-        if status == JobStatus.COMPLETED and len(discovered) != len(manifest.chunks):
-            status = JobStatus.RUNNING
         updated = replace(
             manifest,
             completed_chunks=frozenset(discovered),
@@ -356,6 +437,26 @@ class JobStore:
         )
         self._write_manifest(updated)
         return updated
+
+    def _load_transcript_file(self, path: Path, missing_message: str) -> Transcript:
+        if not path.is_file():
+            raise JobNotFoundError(missing_message)
+        try:
+            return Transcript.from_dict(json.loads(path.read_text(encoding="utf-8")))
+        except (OSError, UnicodeError, json.JSONDecodeError, TypeError, ValueError) as error:
+            raise CorruptJobError(f"cannot read {path}: {error}") from error
+
+    @staticmethod
+    def _load_json_object(path: Path, missing_message: str) -> dict[str, Any]:
+        if not path.is_file():
+            raise JobNotFoundError(missing_message)
+        try:
+            value = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as error:
+            raise CorruptJobError(f"cannot read {path}: {error}") from error
+        if not isinstance(value, dict):
+            raise CorruptJobError(f"{path} does not contain an object")
+        return value
 
     def _write_manifest(self, manifest: JobManifest) -> None:
         self._atomic_json_write(self.manifest_path(manifest.job_id), manifest.to_dict())
@@ -397,3 +498,8 @@ class JobStore:
     def _validate_job_id(job_id: str) -> None:
         if not _SAFE_JOB_ID.fullmatch(job_id):
             raise ValueError("job_id contains unsafe characters")
+
+    @staticmethod
+    def _validate_unit_id(unit_id: str) -> None:
+        if not _SAFE_JOB_ID.fullmatch(unit_id):
+            raise ValueError("unit_id contains unsafe characters")

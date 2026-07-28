@@ -27,7 +27,6 @@ Item {
         if (settings.geminiKeyMasked)
             geminiKey.placeholderText = String(settings.geminiKeyMasked)
         outputFolder.text = String(settings.outputFolder || "")
-        rememberWindow.checked = settings.rememberWindowGeometry !== false
         notifications.checked = settings.notifyOnCompletion !== false
         autoResume.checked = settings.resumeInterruptedJobs !== false
         dirty = false
@@ -38,7 +37,6 @@ Item {
             "openAiApiKey": openAiKey.text.trim(),
             "geminiApiKey": geminiKey.text.trim(),
             "outputFolder": outputFolder.text.trim(),
-            "rememberWindowGeometry": rememberWindow.checked,
             "notifyOnCompletion": notifications.checked,
             "resumeInterruptedJobs": autoResume.checked
         }
@@ -363,30 +361,11 @@ Item {
                     Accessible.name: text
                     onToggled: root.dirty = true
                 }
-                Text {
-                    Layout.fillWidth: true
-                    Layout.leftMargin: 30
-                    text: "Partes já concluídas são preservadas; somente o que falta é enviado novamente."
-                    color: App.Theme.textMuted
-                    font.family: App.Theme.uiFont
-                    font.pixelSize: 12
-                    wrapMode: Text.WordWrap
-                }
 
                 CheckBox {
                     id: notifications
                     Layout.fillWidth: true
                     text: "Avisar quando uma transcrição terminar"
-                    checked: true
-                    font.family: App.Theme.uiFont
-                    Accessible.name: text
-                    onToggled: root.dirty = true
-                }
-
-                CheckBox {
-                    id: rememberWindow
-                    Layout.fillWidth: true
-                    text: "Lembrar tamanho e posição da janela"
                     checked: true
                     font.family: App.Theme.uiFont
                     Accessible.name: text

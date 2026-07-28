@@ -12,6 +12,7 @@ dependem deste contrato.
 | `sidebarCollapsed` | `bool` | Largura da barra lateral: 224 ou 64 px. |
 | `busy` | `bool` | Bloqueia nova execução e mostra atividade global. |
 | `appVersion` | `str` | Rodapé e página Sobre. |
+| `thirdPartyNoticesMarkdown` | `str` | Avisos exibidos no pop-up da página Sobre. |
 | `activeJobState` | `str` | Estado resumido para ações do menu. |
 | `canOpenOutput` | `bool` | Habilita ações de resultado no menu. |
 | `activeJob` | `QVariantMap` | Trabalho visível na página Transcrever. |
@@ -67,46 +68,58 @@ model: ID do catálogo
 language: "auto" | código BCP-47 reduzido
 formats: subconjunto não vazio de ["docx", "txt", "srt", "vtt"]
 outputFolder: caminho ou string vazia
-preferExistingCaptions: bool
+preferExistingCaptions: bool (somente para endereços de vídeo; padrão `false`)
+includeTimestamps: bool
+improveWithAi: bool (padrão `false`; exige DOCX ou TXT)
 ```
 
 `activeJob` aceita:
 
 ```text
-id, title/sourceName, state, detail, progress (0..1),
-completedParts, totalParts, provenance
+id, title/sourceName, state, stage, detail, progress (0..1),
+completedParts, totalParts, provenance, costLabel, usageLabel,
+outputPaths, outputGroups
 ```
 
 `state` é um de `queued`, `preparing`, `running`, `paused`, `completed`,
-`failed`, `cancelled`. `provenance` é um de:
+`failed`, `cancelled`. Novos trabalhos usam `audio_transcription`. Valores antigos de
+`provenance` continuam aceitos para que o Histórico possa exibir trabalhos criados por
+versões anteriores:
 
 - `existing_captions` → **Legenda existente**
 - `author_captions` → **Legendas do autor**
 - `automatic_captions` → **Legendas automáticas**
 - `audio_transcription` → **Áudio transcrito**
 
+`stage` registra o checkpoint sequencial, entre eles `transcription_complete`,
+`improving`, `improvement_complete`, `exporting`, `export_failed` e `completed`.
+`outputGroups` separa listas de caminhos em `improved`, `original` e `captions`.
+Custos chegam ao QML já formatados; preços unitários e fórmulas não fazem parte do
+contrato visual.
+
 ## Histórico
 
 - `history() -> QVariantList[QVariantMap]`.
 - `openHistoryOutput(job_id)`.
+- `openOutputPath(path)`.
 - `resumeTranscription(job_id)`.
 - `showHistoryDetails(job_id)`.
 - Sinal `historyChanged()`.
 
 Cada item do histórico aceita `id`, `title/sourceName`, `createdAtLabel/createdAt`,
-`providerLabel/provider`, `modelLabel/model`, `state`, `progress` e `provenance`.
+`providerLabel/provider`, `modelLabel/model`, `state`, `stage`, `progress`,
+`provenance`, `costLabel` e `usageLabel`.
 
 ## Configurações
 
 - `saveSettings(values: QVariantMap) -> bool`.
 - `testApiKey(provider: str, candidate: str) -> bool | str | None`.
-- `openThirdPartyNotices()`.
 - Sinais `settingsChanged()` e
   `apiKeyTestFinished(provider: str, ok: bool, message: str)`.
 
 O mapa `settings` aceita `openAiKeyMasked`, `geminiKeyMasked`, `outputFolder`,
-`rememberWindowGeometry`, `notifyOnCompletion` e `resumeInterruptedJobs`. Campo de
-chave vazio em `saveSettings` significa preservar a credencial já armazenada.
+`notifyOnCompletion` e `resumeInterruptedJobs`. Campo de chave vazio em `saveSettings`
+significa preservar a credencial já armazenada.
 
 ## Ajuda
 

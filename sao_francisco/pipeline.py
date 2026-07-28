@@ -12,15 +12,19 @@ import os
 import re
 import tempfile
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlparse
 
-from .catalog import model_by_id
+from .catalog import editorial_route_for, model_by_id
 from .core import (
+    EDITORIAL_CONTRACT_VERSION,
     CancellationToken,
     ChunkSpec,
+    CostRecord,
+    EditorialBlock,
+    EditorialValidationError,
     ExportError,
     JobManifest,
     JobStatus,
@@ -35,15 +39,29 @@ from .core import (
     SubtitleOrigin,
     Transcript,
     assemble_chunks,
+    assemble_editorial_results,
+    build_cost_record,
+    export_improved_docx,
+    export_improved_txt,
     export_transcript,
+    format_cost_label,
     format_timestamp,
+    format_usage_label,
     plan_chunks,
+    plan_editorial_blocks,
+    summarize_costs,
+    transcript_to_editorial_text,
+    validate_editorial_result,
+    zero_cost_record,
 )
 from .credentials import CredentialError, read_secret
 from .providers import (
+    EditorialProvider,
+    EditorialRequest,
     ProviderError,
     ProviderRequest,
     TranscriptionProvider,
+    editorial_provider_for,
     provider_for,
 )
 
@@ -53,6 +71,7 @@ _UNSAFE_FILENAME_RE = re.compile(r"[\x00-\x1f<>:\"/\\|?*]+")
 
 ProgressCallback = Callable[["PipelineProgress"], None]
 ProviderFactory = Callable[[str, str], TranscriptionProvider]
+EditorialProviderFactory = Callable[[str, str], EditorialProvider]
 SecretReader = Callable[[str], str | None]
 
 
@@ -73,7 +92,9 @@ class PipelineOptions:
     formats: tuple[str, ...]
     language: str | None = None
     output_folder: Path | None = None
-    prefer_existing_captions: bool = True
+    prefer_existing_captions: bool = False
+    include_timestamps: bool = False
+    improve_with_ai: bool = False
 
     def __post_init__(self) -> None:
         provider = self.provider.strip().casefold()
@@ -112,6 +133,13 @@ class PipelineOptions:
         object.__setattr__(self, "language", language)
         object.__setattr__(self, "output_folder", folder)
         object.__setattr__(self, "prefer_existing_captions", bool(self.prefer_existing_captions))
+        object.__setattr__(self, "include_timestamps", bool(self.include_timestamps))
+        improve = bool(self.improve_with_ai)
+        if improve and not {"docx", "txt"} & set(formats):
+            raise PipelineValidationError(
+                "Para melhorar o texto, escolha DOCX ou TXT."
+            )
+        object.__setattr__(self, "improve_with_ai", improve)
 
     @classmethod
     def from_mapping(cls, value: Mapping[str, Any]) -> PipelineOptions:
@@ -128,7 +156,19 @@ class PipelineOptions:
             prefer_existing_captions=_as_bool(
                 value.get(
                     "preferExistingCaptions",
-                    value.get("prefer_existing_captions", True),
+                    value.get("prefer_existing_captions", False),
+                )
+            ),
+            include_timestamps=_as_bool(
+                value.get(
+                    "includeTimestamps",
+                    value.get("include_timestamps", False),
+                )
+            ),
+            improve_with_ai=_as_bool(
+                value.get(
+                    "improveWithAi",
+                    value.get("improve_with_ai", False),
                 )
             ),
         )
@@ -140,6 +180,8 @@ class PipelineOptions:
             "formats": list(self.formats),
             "output_folder": str(self.output_folder) if self.output_folder else "",
             "prefer_existing_captions": self.prefer_existing_captions,
+            "include_timestamps": self.include_timestamps,
+            "improve_with_ai": self.improve_with_ai,
         }
 
 
@@ -155,6 +197,9 @@ class PipelineProgress:
     completed_parts: int
     total_parts: int
     provenance: str = ""
+    stage: str = ""
+    cost_label: str = ""
+    usage_label: str = ""
 
     def to_ui_dict(self) -> dict[str, Any]:
         return {
@@ -167,6 +212,9 @@ class PipelineProgress:
             "completedParts": self.completed_parts,
             "totalParts": self.total_parts,
             "provenance": self.provenance,
+            "stage": self.stage,
+            "costLabel": self.cost_label,
+            "usageLabel": self.usage_label,
         }
 
 
@@ -176,10 +224,20 @@ class PipelineResult:
     transcript: Transcript
     outputs: tuple[Path, ...]
     provenance: str
+    improved_text: str | None = None
+    output_groups: Mapping[str, tuple[Path, ...]] = field(default_factory=dict)
 
     @property
     def primary_output(self) -> Path | None:
         preferred = ("docx", "md", "txt", "srt", "vtt")
+        improved = tuple(self.output_groups.get("improved", ()))
+        if improved:
+            preferred_improved = next(
+                (path for suffix in preferred for path in improved if path.suffix == f".{suffix}"),
+                None,
+            )
+            if preferred_improved is not None:
+                return preferred_improved
         by_suffix = {path.suffix.casefold().lstrip("."): path for path in self.outputs}
         return next((by_suffix[item] for item in preferred if item in by_suffix), None)
 
@@ -198,6 +256,7 @@ class TranscriptionPipeline:
         *,
         media: MediaProcessor | None = None,
         provider_factory: ProviderFactory = provider_for,
+        editorial_provider_factory: EditorialProviderFactory = editorial_provider_for,
         secret_reader: SecretReader = read_secret,
         default_output_root: str | os.PathLike[str] | None = None,
         target_chunk_duration: float = 600.0,
@@ -208,6 +267,7 @@ class TranscriptionPipeline:
         self.job_store = job_store
         self.media = media or MediaProcessor()
         self.provider_factory = provider_factory
+        self.editorial_provider_factory = editorial_provider_factory
         self.secret_reader = secret_reader
         self.default_output_root = (
             Path(default_output_root).expanduser()
@@ -290,9 +350,19 @@ class TranscriptionPipeline:
                         provenance=provenance,
                         extra_metadata={"subtitle_origin": subtitle.origin.value},
                     )
-                    manifest = self.job_store.save_chunk_result(
-                        manifest.job_id, 0, subtitle.transcript
+                    subtitle_transcript = _with_cost_record(
+                        subtitle.transcript,
+                        zero_cost_record(
+                            stage="transcription",
+                            unit_id="caption-0",
+                            provider=selected.provider,
+                            model=selected.model,
+                        ),
                     )
+                    manifest = self.job_store.save_chunk_result(
+                        manifest.job_id, 0, subtitle_transcript
+                    )
+                    manifest = self._update_cost_metadata(manifest)
                     self._report_manifest(
                         progress,
                         manifest,
@@ -304,7 +374,7 @@ class TranscriptionPipeline:
                     return self._finalize(
                         manifest,
                         selected,
-                        subtitle.transcript,
+                        subtitle_transcript,
                         provenance,
                         token,
                         progress,
@@ -459,13 +529,24 @@ class TranscriptionPipeline:
                         raise PipelineError(
                             "A legenda original não está mais disponível para retomada."
                         )
-                    manifest = self.job_store.save_chunk_result(
-                        job_id, manifest.pending_chunks[0].index, subtitle.transcript
+                    pending_index = manifest.pending_chunks[0].index
+                    subtitle_transcript = _with_cost_record(
+                        subtitle.transcript,
+                        zero_cost_record(
+                            stage="transcription",
+                            unit_id=f"caption-{pending_index}",
+                            provider=options.provider,
+                            model=options.model,
+                        ),
                     )
+                    manifest = self.job_store.save_chunk_result(
+                        job_id, pending_index, subtitle_transcript
+                    )
+                    manifest = self._update_cost_metadata(manifest)
                     return self._finalize(
                         manifest,
                         options,
-                        subtitle.transcript,
+                        subtitle_transcript,
                         provenance,
                         token,
                         progress,
@@ -534,10 +615,23 @@ class TranscriptionPipeline:
         provenance: str,
         extra_metadata: Mapping[str, Any] | None = None,
     ) -> JobManifest:
+        planned_records = [
+            build_cost_record(
+                stage="transcription",
+                unit_id=f"planned-{chunk.index}",
+                provider=options.provider,
+                model=options.model,
+                duration_seconds=chunk.duration,
+            )
+            for chunk in chunks
+        ]
+        forecast = summarize_costs(planned_records)
         metadata = {
             "source_name": source_name,
             "source_type": "url" if _is_http_url(source) else "file",
             "provenance": provenance,
+            "pipeline_stage": "preparing",
+            "cost_forecast": forecast,
             **_source_identity(source),
             **dict(extra_metadata or {}),
         }
@@ -620,10 +714,20 @@ class TranscriptionPipeline:
                     token,
                 )
                 token.raise_if_cancelled()
+                record = build_cost_record(
+                    stage="transcription",
+                    unit_id=f"chunk-{chunk.index}",
+                    provider=options.provider,
+                    model=options.model,
+                    usage=transcript.metadata.get("usage"),
+                    duration_seconds=chunk.duration,
+                )
+                transcript = _with_cost_record(transcript, record)
                 manifest = self.job_store.save_chunk_result(
                     manifest.job_id, chunk.index, transcript
                 )
                 results[chunk.index] = transcript
+                manifest = self._update_cost_metadata(manifest)
             except OperationCancelled:
                 raise
             except BaseException as exc:
@@ -659,26 +763,76 @@ class TranscriptionPipeline:
         progress: ProgressCallback | None,
     ) -> PipelineResult:
         token.raise_if_cancelled()
-        source_name = str(manifest.metadata.get("source_name") or _source_name(manifest.source))
+        source_name = str(
+            manifest.metadata.get("source_name") or _source_name(manifest.source)
+        )
+        if self.job_store.has_original_result(manifest.job_id):
+            transcript = self.job_store.load_original_result(manifest.job_id)
+        else:
+            self.job_store.save_original_result(manifest.job_id, transcript)
+        manifest = self._save_stage(
+            manifest,
+            "transcription_complete",
+            status=JobStatus.RUNNING,
+        )
+        manifest = self._update_cost_metadata(manifest)
+
+        improved_text: str | None = None
+        if options.improve_with_ai:
+            if self.job_store.has_improved_result(manifest.job_id):
+                improved_text = self.job_store.load_improved_result(manifest.job_id)
+            else:
+                improved_text, manifest = self._improve_text(
+                    manifest,
+                    options,
+                    transcript,
+                    token,
+                    progress,
+                )
+
+        manifest = self._save_stage(
+            manifest,
+            "exporting",
+            status=JobStatus.RUNNING,
+        )
         self._report_manifest(
             progress,
             manifest,
             source_name,
             "running",
-            "Montando e exportando os resultados…",
+            "Criando os arquivos finais…",
             provenance,
         )
-        outputs = self._export_all(transcript, manifest, options, token)
-        primary = _primary_output(outputs)
+        try:
+            outputs, output_groups = self._export_all(
+                transcript,
+                improved_text,
+                manifest,
+                options,
+                token,
+            )
+        except BaseException:
+            self._save_stage(manifest, "export_failed", status=JobStatus.FAILED)
+            raise
+        primary = _primary_output(
+            output_groups.get("improved", ()) or outputs
+        )
         metadata = {
             **dict(manifest.metadata),
             "provenance": provenance,
+            "pipeline_stage": "completed",
             "output_paths": [str(path) for path in outputs],
+            "output_groups": {
+                key: [str(path) for path in values]
+                for key, values in output_groups.items()
+            },
             "primary_output": str(primary) if primary else "",
         }
+        metadata.pop("status_message", None)
         manifest = self.job_store.save_job(
             replace(manifest, status=JobStatus.COMPLETED, metadata=metadata)
         )
+        manifest = self._update_cost_metadata(manifest)
         self._report_manifest(
             progress,
             manifest,
@@ -687,29 +841,45 @@ class TranscriptionPipeline:
             "Concluída; os arquivos estão prontos.",
             provenance,
         )
-        return PipelineResult(manifest, transcript, outputs, provenance)
+        return PipelineResult(
+            manifest,
+            transcript,
+            outputs,
+            provenance,
+            improved_text,
+            output_groups,
+        )
 
     def _export_all(
         self,
         transcript: Transcript,
+        improved_text: str | None,
         manifest: JobManifest,
         options: PipelineOptions,
         token: CancellationToken,
-    ) -> tuple[Path, ...]:
+    ) -> tuple[tuple[Path, ...], dict[str, tuple[Path, ...]]]:
         folder = self._output_folder(manifest.source, options)
         folder.mkdir(parents=True, exist_ok=True)
         if not folder.is_dir():
             raise PipelineError("A pasta de saída não pôde ser criada.")
-        stem = _available_stem(
+        stem = _available_result_stem(
             folder,
             str(manifest.metadata.get("source_name") or _source_name(manifest.source)),
             options.formats,
+            improved_text is not None,
         )
 
-        outputs: list[Path] = []
+        original_outputs: list[Path] = []
+        caption_outputs: list[Path] = []
+        improved_outputs: list[Path] = []
         for output_format in options.formats:
             token.raise_if_cancelled()
-            destination = folder / f"{stem}.{output_format}"
+            original_suffix = (
+                " — transcrição"
+                if improved_text is not None and output_format in {"docx", "txt"}
+                else ""
+            )
+            destination = folder / f"{stem}{original_suffix}.{output_format}"
             if output_format == "md":
                 output = export_markdown(
                     transcript,
@@ -722,8 +892,15 @@ class TranscriptionPipeline:
                     transcript,
                     destination,
                     format=output_format,
-                    include_timestamps=True,
+                    include_timestamps=options.include_timestamps,
                     title=str(manifest.metadata.get("source_name") or stem),
+                )
+            elif output_format == "txt":
+                output = export_transcript(
+                    transcript,
+                    destination,
+                    format=output_format,
+                    include_timestamps=options.include_timestamps,
                 )
             else:
                 output = export_transcript(
@@ -731,8 +908,289 @@ class TranscriptionPipeline:
                     destination,
                     format=output_format,
                 )
-            outputs.append(output)
-        return tuple(outputs)
+            if output_format in {"srt", "vtt"}:
+                caption_outputs.append(output)
+            else:
+                original_outputs.append(output)
+
+        if improved_text is not None:
+            title = str(manifest.metadata.get("source_name") or stem)
+            for output_format in options.formats:
+                if output_format not in {"docx", "txt"}:
+                    continue
+                token.raise_if_cancelled()
+                destination = folder / f"{stem} — texto melhorado.{output_format}"
+                if output_format == "docx":
+                    output = export_improved_docx(
+                        improved_text,
+                        destination,
+                        title=title,
+                        language=transcript.language,
+                    )
+                else:
+                    output = export_improved_txt(improved_text, destination)
+                improved_outputs.append(output)
+
+        groups = {
+            "improved": tuple(improved_outputs),
+            "original": tuple(original_outputs),
+            "captions": tuple(caption_outputs),
+        }
+        outputs = (
+            *groups["original"],
+            *groups["captions"],
+            *groups["improved"],
+        )
+        return tuple(outputs), groups
+
+    def _improve_text(
+        self,
+        manifest: JobManifest,
+        options: PipelineOptions,
+        transcript: Transcript,
+        token: CancellationToken,
+        progress: ProgressCallback | None,
+    ) -> tuple[str, JobManifest]:
+        token.raise_if_cancelled()
+        source_name = str(
+            manifest.metadata.get("source_name") or _source_name(manifest.source)
+        )
+        original_text = transcript_to_editorial_text(transcript)
+        if self.job_store.has_editorial_plan(manifest.job_id):
+            raw_plan = self.job_store.load_editorial_plan(manifest.job_id)
+            if str(raw_plan.get("contract_version")) != EDITORIAL_CONTRACT_VERSION:
+                raise PipelineError(
+                    "A melhoria salva usa uma versão incompatível. Inicie um novo trabalho."
+                )
+            blocks = tuple(
+                EditorialBlock.from_dict(item)
+                for item in raw_plan.get("blocks", ())
+            )
+        else:
+            blocks = plan_editorial_blocks(original_text)
+            self.job_store.save_editorial_plan(
+                manifest.job_id,
+                {
+                    "contract_version": EDITORIAL_CONTRACT_VERSION,
+                    "blocks": [item.to_dict() for item in blocks],
+                },
+            )
+
+        if not blocks:
+            self.job_store.save_improved_result(manifest.job_id, original_text)
+            return original_text, self._save_stage(
+                manifest,
+                "improvement_complete",
+                status=JobStatus.RUNNING,
+            )
+
+        saved = self.job_store.load_editorial_results(manifest.job_id)
+        route = editorial_route_for(options.provider, options.model)
+        protected_speakers = tuple(
+            dict.fromkeys(
+                segment.speaker.strip()
+                for segment in transcript.segments
+                if segment.speaker and segment.speaker.strip()
+            )
+        )
+        pending = [block for block in blocks if block.block_id not in saved]
+        provider: EditorialProvider | None = None
+        if pending:
+            secret = self.secret_reader(options.provider)
+            if not secret:
+                raise PipelineValidationError(
+                    "Configure a chave do serviço escolhido antes de melhorar o texto."
+                )
+            provider = self.editorial_provider_factory(options.provider, secret)
+
+        manifest = self._save_stage(
+            manifest,
+            "improving",
+            status=JobStatus.RUNNING,
+            extra_metadata={
+                "editorial_total": len(blocks),
+                "editorial_completed": len(saved),
+            },
+        )
+        for block in pending:
+            token.raise_if_cancelled()
+            completed = len(saved)
+            self._report(
+                progress,
+                PipelineProgress(
+                    job_id=manifest.job_id,
+                    source_name=source_name,
+                    state="running",
+                    detail=(
+                        f"Melhorando o texto — parte {completed + 1} de {len(blocks)}…"
+                    ),
+                    progress=completed / len(blocks),
+                    completed_parts=completed,
+                    total_parts=len(blocks),
+                    provenance=str(manifest.metadata.get("provenance") or ""),
+                    stage="improving",
+                    **self._cost_labels(manifest, in_progress=True),
+                ),
+            )
+            if provider is None:
+                raise PipelineError("A melhoria não pôde ser iniciada.")
+            response = provider.improve(
+                EditorialRequest(
+                    block_id=block.block_id,
+                    text=block.text,
+                    model_id=route.model_id,
+                    reasoning_effort=route.reasoning_effort,
+                    previous_context=_editorial_context(block.index, blocks),
+                ),
+                token,
+            )
+            cost_record = build_cost_record(
+                stage="improvement",
+                unit_id=block.block_id,
+                provider=options.provider,
+                model=route.model_id,
+                usage=response.usage,
+            )
+            try:
+                improved = validate_editorial_result(
+                    block.text,
+                    response.text,
+                    protected_speakers=protected_speakers,
+                )
+            except EditorialValidationError:
+                self._record_cost_adjustment(manifest, cost_record)
+                raise
+            value = {
+                "block_id": block.block_id,
+                "index": block.index,
+                "text": improved,
+                "model": response.model_id,
+                "contract_version": EDITORIAL_CONTRACT_VERSION,
+                "usage": response.usage.to_dict(),
+                "cost_record": cost_record.to_dict(),
+            }
+            self.job_store.save_editorial_result(
+                manifest.job_id,
+                block.block_id,
+                value,
+            )
+            saved[block.block_id] = value
+            manifest = self._update_cost_metadata(manifest)
+            manifest = self._save_stage(
+                manifest,
+                "improving",
+                status=JobStatus.RUNNING,
+                extra_metadata={
+                    "editorial_total": len(blocks),
+                    "editorial_completed": len(saved),
+                },
+            )
+
+        assembled = assemble_editorial_results(
+            blocks,
+            {
+                block_id: str(value.get("text") or "")
+                for block_id, value in saved.items()
+            },
+        )
+        self.job_store.save_improved_result(manifest.job_id, assembled)
+        manifest = self._save_stage(
+            manifest,
+            "improvement_complete",
+            status=JobStatus.RUNNING,
+        )
+        self._report_manifest(
+            progress,
+            manifest,
+            source_name,
+            "running",
+            "Texto melhorado pronto; criando os arquivos…",
+            str(manifest.metadata.get("provenance") or ""),
+        )
+        return assembled, manifest
+
+    def _save_stage(
+        self,
+        manifest: JobManifest,
+        stage: str,
+        *,
+        status: JobStatus,
+        extra_metadata: Mapping[str, Any] | None = None,
+    ) -> JobManifest:
+        current = self.job_store.load_job(manifest.job_id)
+        metadata = {
+            **dict(current.metadata),
+            "pipeline_stage": stage,
+            **dict(extra_metadata or {}),
+        }
+        return self.job_store.save_job(
+            replace(current, status=status, metadata=metadata)
+        )
+
+    def _update_cost_metadata(self, manifest: JobManifest) -> JobManifest:
+        current = self.job_store.load_job(manifest.job_id)
+        records: list[CostRecord] = []
+        for transcript in self.job_store.load_completed_results(manifest.job_id).values():
+            raw = transcript.metadata.get("cost_record")
+            if isinstance(raw, Mapping):
+                records.append(CostRecord.from_dict(raw))
+        for value in self.job_store.load_editorial_results(manifest.job_id).values():
+            raw = value.get("cost_record")
+            if isinstance(raw, Mapping):
+                records.append(CostRecord.from_dict(raw))
+        raw_adjustments = current.metadata.get("cost_adjustments", ())
+        if isinstance(raw_adjustments, Sequence) and not isinstance(
+            raw_adjustments, (str, bytes)
+        ):
+            for raw in raw_adjustments:
+                if isinstance(raw, Mapping):
+                    records.append(CostRecord.from_dict(raw))
+        zero_proven = (
+            str(current.metadata.get("provenance") or "") != "audio_transcription"
+            and not bool(current.settings.get("improve_with_ai", False))
+        )
+        summary = summarize_costs(records, zero_proven=zero_proven)
+        metadata = {**dict(current.metadata), "cost_summary": summary}
+        return self.job_store.save_job(replace(current, metadata=metadata))
+
+    def _record_cost_adjustment(
+        self,
+        manifest: JobManifest,
+        record: CostRecord,
+    ) -> JobManifest:
+        current = self.job_store.load_job(manifest.job_id)
+        raw_adjustments = current.metadata.get("cost_adjustments", ())
+        adjustments = (
+            [dict(item) for item in raw_adjustments if isinstance(item, Mapping)]
+            if isinstance(raw_adjustments, Sequence)
+            and not isinstance(raw_adjustments, (str, bytes))
+            else []
+        )
+        value = record.to_dict()
+        value["unit_id"] = f"{record.unit_id}:rejected:{len(adjustments) + 1}"
+        adjustments.append(value)
+        metadata = {**dict(current.metadata), "cost_adjustments": adjustments}
+        saved = self.job_store.save_job(replace(current, metadata=metadata))
+        return self._update_cost_metadata(saved)
+
+    @staticmethod
+    def _cost_labels(
+        manifest: JobManifest,
+        *,
+        in_progress: bool,
+    ) -> dict[str, str]:
+        summary = manifest.metadata.get("cost_summary")
+        if not isinstance(summary, Mapping) or (
+            summary.get("usd") is None and not summary.get("proven_zero")
+        ):
+            forecast = manifest.metadata.get("cost_forecast")
+            if isinstance(forecast, Mapping):
+                summary = forecast
+        normalized = summary if isinstance(summary, Mapping) else {}
+        return {
+            "cost_label": format_cost_label(normalized, in_progress=in_progress),
+            "usage_label": format_usage_label(normalized),
+        }
 
     def _output_folder(self, source: str, options: PipelineOptions) -> Path:
         if options.output_folder is not None:
@@ -787,7 +1245,13 @@ class TranscriptionPipeline:
                 else None
             ),
             prefer_existing_captions=_as_bool(
-                manifest.settings.get("prefer_existing_captions", True)
+                manifest.settings.get("prefer_existing_captions", False)
+            ),
+            include_timestamps=_as_bool(
+                manifest.settings.get("include_timestamps", False)
+            ),
+            improve_with_ai=_as_bool(
+                manifest.settings.get("improve_with_ai", False)
             ),
         )
 
@@ -838,17 +1302,20 @@ class TranscriptionPipeline:
         detail: str,
         provenance: str,
     ) -> None:
+        current = self.job_store.load_job(manifest.job_id)
         self._report(
             callback,
             PipelineProgress(
-                job_id=manifest.job_id,
+                job_id=current.job_id,
                 source_name=source_name,
                 state=state,
                 detail=detail,
-                progress=manifest.progress,
-                completed_parts=len(manifest.completed_chunks),
-                total_parts=len(manifest.chunks),
+                progress=current.progress,
+                completed_parts=len(current.completed_chunks),
+                total_parts=len(current.chunks),
                 provenance=provenance,
+                stage=str(current.metadata.get("pipeline_stage") or ""),
+                **self._cost_labels(current, in_progress=state != "completed"),
             ),
         )
 
@@ -920,6 +1387,35 @@ def _available_stem(folder: Path, source_name: str, formats: Sequence[str]) -> s
     return candidate
 
 
+def _available_result_stem(
+    folder: Path,
+    source_name: str,
+    formats: Sequence[str],
+    has_improved: bool,
+) -> str:
+    base = _safe_stem(Path(source_name).stem or source_name)
+    candidate = base
+    suffix = 2
+
+    def destinations(stem: str) -> tuple[Path, ...]:
+        values: list[Path] = []
+        for output_format in formats:
+            original_suffix = (
+                " — transcrição"
+                if has_improved and output_format in {"docx", "txt"}
+                else ""
+            )
+            values.append(folder / f"{stem}{original_suffix}.{output_format}")
+            if has_improved and output_format in {"docx", "txt"}:
+                values.append(folder / f"{stem} — texto melhorado.{output_format}")
+        return tuple(values)
+
+    while any(path.exists() for path in destinations(candidate)):
+        candidate = f"{base} ({suffix})"
+        suffix += 1
+    return candidate
+
+
 def _safe_stem(value: str) -> str:
     cleaned = _UNSAFE_FILENAME_RE.sub("-", value).strip(" .-")
     return (cleaned or "transcricao")[:120].rstrip(" .")
@@ -931,6 +1427,21 @@ def _source_name(source: str) -> str:
     parsed = urlparse(source)
     final = unquote(Path(parsed.path).name).strip()
     return final or parsed.netloc
+
+
+def _with_cost_record(transcript: Transcript, record: CostRecord) -> Transcript:
+    metadata = {**dict(transcript.metadata), "cost_record": record.to_dict()}
+    return replace(transcript, metadata=metadata)
+
+
+def _editorial_context(
+    index: int,
+    blocks: Sequence[EditorialBlock],
+) -> str | None:
+    if index <= 0:
+        return None
+    previous = blocks[index - 1].text.strip()
+    return previous[-800:] or None
 
 
 def _workspace_source_name(workspace: Any, fallback: str) -> str:

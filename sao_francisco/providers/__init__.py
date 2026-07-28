@@ -3,16 +3,30 @@ from .base import (
     ProviderRequest,
     TranscriptionProvider,
 )
+from .editorial import (
+    EditorialProvider,
+    EditorialRequest,
+    EditorialResponse,
+    GeminiEditorialProvider,
+    OpenAIEditorialProvider,
+    editorial_provider_for,
+)
 from .gemini_provider import GeminiProvider
 from .openai_provider import OpenAIProvider
 
 __all__ = [
     "GeminiProvider",
+    "GeminiEditorialProvider",
+    "EditorialProvider",
+    "EditorialRequest",
+    "EditorialResponse",
     "OpenAIProvider",
+    "OpenAIEditorialProvider",
     "ProviderError",
     "ProviderRequest",
     "TranscriptionProvider",
     "provider_for",
+    "editorial_provider_for",
 ]
 
 

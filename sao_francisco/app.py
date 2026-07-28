@@ -36,7 +36,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     """Create the Qt application, inject ``appBackend``, and load ``Main.qml``."""
 
     try:
-        from PySide6.QtCore import QCoreApplication, QRect, QSettings, QUrl
+        from PySide6.QtCore import (
+            QCoreApplication,
+            QRect,
+            QSettings,
+            QStandardPaths,
+            QTimer,
+            QUrl,
+        )
         from PySide6.QtGui import QFontDatabase, QIcon
         from PySide6.QtQml import QQmlApplicationEngine
         from PySide6.QtQuick import QQuickWindow
@@ -58,6 +65,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     QQuickStyle.setStyle("Fusion")
 
     arguments = list(argv) if argv is not None else list(sys.argv)
+    smoke_test = "--smoke-test" in arguments
+    arguments = [argument for argument in arguments if argument != "--smoke-test"]
+    if smoke_test:
+        QStandardPaths.setTestModeEnabled(True)
     application = QApplication(arguments)
     application.setApplicationDisplayName("São Francisco")
     application.setQuitOnLastWindowClosed(True)
@@ -102,6 +113,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         backend.shutdown()
 
     application.aboutToQuit.connect(finish)
+    if smoke_test:
+        QTimer.singleShot(250, application.quit)
     return int(application.exec())
 
 
@@ -123,12 +136,6 @@ def _restore_window(
     rect_type: Any,
     application_type: Any,
 ) -> None:
-    if not settings.value(
-        "preferences/rememberWindowGeometry",
-        True,
-        type=bool,
-    ):
-        return
     width = settings.value("window/width", 1280, type=int)
     height = settings.value("window/height", 800, type=int)
     x = settings.value("window/x", -1, type=int)
@@ -158,14 +165,6 @@ def _restore_window(
 
 
 def _save_window(window: Any, settings: Any) -> None:
-    if not settings.value(
-        "preferences/rememberWindowGeometry",
-        True,
-        type=bool,
-    ):
-        settings.remove("window")
-        settings.sync()
-        return
     visibility = window.visibility()
     maximized = visibility == type(visibility).Maximized
     if not maximized:

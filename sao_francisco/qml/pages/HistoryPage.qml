@@ -59,7 +59,15 @@ Item {
         filteredItems = matches
     }
 
-    function stateLabel(value) {
+    function stateLabel(value, stage) {
+        if (value === "running" && stage === "improving")
+            return "Melhorando o texto"
+        if (value === "running" && stage === "exporting")
+            return "Criando arquivos"
+        if (value === "failed" && stage === "improving")
+            return "Melhoria interrompida"
+        if (value === "failed" && stage === "export_failed")
+            return "Exportação interrompida"
         const labels = {
             "queued": "Na fila",
             "preparing": "Preparando",
@@ -159,8 +167,11 @@ Item {
 
             ComboBox {
                 id: stateFilter
-                Layout.preferredWidth: 172
+                objectName: "historyStateFilter"
+                Layout.preferredWidth: 196
                 implicitHeight: 38
+                leftPadding: 20
+                rightPadding: 20
                 textRole: "label"
                 valueRole: "id"
                 model: [
@@ -172,6 +183,19 @@ Item {
                 ]
                 Accessible.name: "Filtrar por estado"
                 onCurrentValueChanged: root.applyFilters()
+                contentItem: Text {
+                    leftPadding: stateFilter.leftPadding
+                    rightPadding: stateFilter.rightPadding
+                    text: stateFilter.displayText
+                    color: stateFilter.enabled
+                           ? App.Theme.text
+                           : App.Theme.textSoft
+                    font.family: App.Theme.uiFont
+                    font.pixelSize: App.Theme.bodySize
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                    elide: Text.ElideRight
+                }
             }
 
             Components.AppButton {
@@ -224,7 +248,7 @@ Item {
                     required property var modelData
 
                     width: ListView.view.width - 10
-                    height: 104
+                    height: 120
                     radius: App.Theme.radiusLarge
                     color: App.Theme.surface
                     border.width: 1
@@ -292,7 +316,8 @@ Item {
                                 spacing: 7
                                 Components.StatusPill {
                                     text: root.stateLabel(String(
-                                              historyCard.modelData.state || ""))
+                                              historyCard.modelData.state || ""),
+                                              String(historyCard.modelData.stage || ""))
                                     tone: root.stateTone(String(
                                               historyCard.modelData.state || ""))
                                 }
@@ -314,6 +339,15 @@ Item {
                                     color: App.Theme.textMuted
                                     font.family: App.Theme.uiFont
                                     font.pixelSize: 12
+                                }
+                                Text {
+                                    visible: String(historyCard.modelData.costLabel
+                                                    || "").length > 0
+                                    text: String(historyCard.modelData.costLabel || "")
+                                    color: App.Theme.textMuted
+                                    font.family: App.Theme.uiFont
+                                    font.pixelSize: 12
+                                    elide: Text.ElideRight
                                 }
                                 Item { Layout.fillWidth: true }
                             }

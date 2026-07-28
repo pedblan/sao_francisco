@@ -13,18 +13,16 @@ retomados sem reenviar as partes já concluídas.
 ## Recursos
 
 - Arquivos locais de áudio e vídeo, além de URLs públicas processadas pelo yt-dlp.
-- Legendas existentes como primeira opção:
-  - arquivos `.srt` e `.vtt` ao lado da mídia;
-  - faixas de legenda textual incorporadas;
-  - legendas manuais e automáticas de URLs compatíveis;
-  - seleção segura pela faixa padrão/original ou pelo idioma escolhido;
-  - retorno automático à transcrição do áudio quando não há legenda adequada.
+- Transcrição do áudio por padrão, com opção de aproveitar legendas de vídeos.
+- Normalização de legendas automáticas progressivas para remover trechos repetidos.
 - Detecção automática do idioma por padrão, com escolha manual apenas como pista explícita.
 - Divisão por silêncio, pequena sobreposição em cortes forçados e montagem sem repetições
   nas emendas.
 - OpenAI e Google Gemini, com modelos destinados a economia, precisão, falantes e
   marcações de tempo.
 - Exportação para DOCX, TXT, SRT e WebVTT.
+- Marcações de tempo opcionais no DOCX e TXT, desativadas por padrão.
+- Nome do vídeo aproveitado nos arquivos exportados quando a origem é uma URL.
 - Histórico, cancelamento cooperativo e retomada por parte.
 - Chaves no macOS Keychain ou nas Credenciais do Windows, sem arquivo de texto como
   alternativa silenciosa.
@@ -99,13 +97,12 @@ aplicativo também reconhece `OPENAI_API_KEY` e `GEMINI_API_KEY`.
 ## Como a mídia longa é processada
 
 1. O FFprobe valida a mídia e mede sua duração.
-2. Se solicitado, o aplicativo tenta aproveitar uma legenda textual existente.
-3. O FFmpeg detecta silêncios próximos dos pontos de divisão.
-4. O áudio é convertido para mono, 16 kHz e partes de tamanho previsível.
-5. Cada parte é transcrita e persistida de forma atômica.
-6. Os tempos são deslocados para a linha temporal original e sobreposições são
-   deduplicadas.
-7. Os formatos escolhidos são gravados sem sobrescrever silenciosamente arquivos
+2. O FFmpeg detecta silêncios próximos dos pontos de divisão.
+3. O áudio é convertido para mono, 16 kHz e partes de tamanho previsível.
+4. Cada parte é transcrita e persistida de forma atômica.
+5. Os tempos são deslocados para a linha temporal original e sobreposições são
+  deduplicadas.
+6. Os formatos escolhidos são gravados sem sobrescrever silenciosamente arquivos
    anteriores.
 
 Arquivos temporários pertencem a diretórios exclusivos e marcados pelo aplicativo. A
@@ -134,6 +131,18 @@ pyside6-qmllint -I sao_francisco/qml \
 
 Os testes não fazem chamadas pagas. A validação manual de uma chave usa apenas a listagem
 de modelos do provedor.
+
+### Build para Apple Silicon
+
+Em um Mac Apple Silicon com Python ARM64 3.11–3.13:
+
+```bash
+./scripts/build_macos_arm64.sh
+```
+
+O script cria um aplicativo macOS nativo, assinado ad hoc para testes locais, e o
+distribui em arquivos ZIP e DMG na pasta `dist/`. O FFmpeg e o FFprobe continuam sendo
+dependências do sistema; o yt-dlp é incorporado ao aplicativo.
 
 ## Custos e direitos
 

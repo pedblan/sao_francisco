@@ -30,7 +30,16 @@ pytestmark = pytest.mark.skipif(
 )
 
 if PYSIDE_AVAILABLE:
-    from PySide6.QtCore import Property, QObject, QPointF, Qt, QUrl, Signal, Slot
+    from PySide6.QtCore import (
+        Property,
+        QMetaObject,
+        QObject,
+        QPointF,
+        Qt,
+        QUrl,
+        Signal,
+        Slot,
+    )
     from PySide6.QtGui import QFontDatabase, QGuiApplication
     from PySide6.QtQml import QQmlApplicationEngine
     from PySide6.QtQuick import QQuickItem, QQuickWindow
@@ -100,12 +109,22 @@ class ProbeBackend(QObject):
     toastRequested = Signal(str)
     apiKeyTestFinished = Signal(str, bool, str)
 
-    def __init__(self, route: str) -> None:
+    def __init__(self, route: str, active_job: dict[str, Any] | None = None) -> None:
         super().__init__()
         self._route = route
         self._sidebar_collapsed = False
         self._help_anchor = "chaves-da-openai-e-do-gemini"
         self._help = HelpDocument.from_path(HELP_PATH)
+        self._active_job = active_job or {
+            "id": "probe-active",
+            "title": "Entrevista extensa para comprovar a composição.mp4",
+            "state": "running",
+            "detail": "Transcrevendo parte 7 de 24",
+            "progress": 0.31,
+            "completedParts": 6,
+            "totalParts": 24,
+            "provenance": "audio_transcription",
+        }
 
     @Property(str, notify=currentRouteChanged)
     def currentRoute(self) -> str:  # noqa: N802 - nome público do contrato QML
@@ -123,9 +142,17 @@ class ProbeBackend(QObject):
     def appVersion(self) -> str:  # noqa: N802
         return "0.1.0-probe"
 
+    @Property(str, constant=True)
+    def thirdPartyNoticesMarkdown(self) -> str:  # noqa: N802
+        entries = "\n\n".join(
+            f"## Componente {index}\n\nLicença e aviso de teste."
+            for index in range(1, 13)
+        )
+        return f"# Avisos de terceiros\n\n{entries}"
+
     @Property(str, notify=activeJobStateChanged)
     def activeJobState(self) -> str:  # noqa: N802
-        return "running"
+        return str(self._active_job.get("state") or "")
 
     @Property(bool, notify=canOpenOutputChanged)
     def canOpenOutput(self) -> bool:  # noqa: N802
@@ -133,16 +160,7 @@ class ProbeBackend(QObject):
 
     @Property("QVariantMap", notify=activeJobChanged)
     def activeJob(self) -> dict[str, Any]:  # noqa: N802
-        return {
-            "id": "probe-active",
-            "title": "Entrevista extensa para comprovar a composição.mp4",
-            "state": "running",
-            "detail": "Transcrevendo parte 7 de 24",
-            "progress": 0.31,
-            "completedParts": 6,
-            "totalParts": 24,
-            "provenance": "audio_transcription",
-        }
+        return dict(self._active_job)
 
     @Property("QVariantList", notify=pendingSourcesChanged)
     def pendingSources(self) -> list[str]:  # noqa: N802
@@ -162,7 +180,6 @@ class ProbeBackend(QObject):
             "openAiKeyMasked": "sk-••••••••",
             "geminiKeyMasked": "••••••••",
             "outputFolder": "",
-            "rememberWindowGeometry": True,
             "notifyOnCompletion": True,
             "resumeInterruptedJobs": True,
         }
@@ -240,6 +257,10 @@ class ProbeBackend(QObject):
     def revealActiveOutput(self) -> None:  # noqa: N802
         return
 
+    @Slot(str)
+    def openOutputPath(self, _path: str) -> None:  # noqa: N802
+        return
+
     @Slot(result="QVariantList")
     def history(self) -> list[dict[str, Any]]:
         return self._history_rows()
@@ -287,10 +308,6 @@ class ProbeBackend(QObject):
     @Slot(str, str, result=bool)
     def testApiKey(self, _provider: str, _candidate: str) -> bool:  # noqa: N802
         return True
-
-    @Slot()
-    def openThirdPartyNotices(self) -> None:  # noqa: N802
-        return
 
     @staticmethod
     def _history_rows() -> list[dict[str, Any]]:
@@ -487,6 +504,167 @@ def test_all_qml_routes_render_and_reach_the_end(
                 _quick_item(window, scroll_name),
                 _quick_item(window, marker_name),
             )
+    finally:
+        for root in engine.rootObjects():
+            if isinstance(root, QQuickWindow):
+                root.close()
+        engine.deleteLater()
+        _settle(qt_app, 40)
+
+
+def test_improve_with_ai_starts_off_and_accepts_keyboard(
+    qt_app: QGuiApplication,
+) -> None:
+    backend = ProbeBackend("transcribe")
+    engine = QQmlApplicationEngine()
+    engine.rootContext().setContextProperty("appBackend", backend)
+
+    try:
+        engine.load(QUrl.fromLocalFile(str(QML_MAIN)))
+        _settle(qt_app, 180)
+        window = engine.rootObjects()[0]
+        assert isinstance(window, QQuickWindow)
+        window.setWidth(1024)
+        window.setHeight(680)
+        window.show()
+        _settle(qt_app)
+
+        checkbox = _quick_item(window, "improveWithAiCheck")
+        assert checkbox.property("checked") is False
+        assert checkbox.property("enabled") is True
+        checkbox.forceActiveFocus()
+        QTest.keyClick(window, Qt.Key.Key_Space)
+        _settle(qt_app)
+        assert checkbox.property("checked") is True
+    finally:
+        for root in engine.rootObjects():
+            if isinstance(root, QQuickWindow):
+                root.close()
+        engine.deleteLater()
+        _settle(qt_app, 40)
+
+
+@pytest.mark.parametrize("variant", ("completed", "improvement_failed"))
+def test_transcribe_result_states_render_without_clipping(
+    qt_app: QGuiApplication,
+    tmp_path: Path,
+    variant: str,
+) -> None:
+    if variant == "completed":
+        active_job = {
+            "id": "probe-completed",
+            "title": "Entrevista sobre nomes, números e memória coletiva.mp4",
+            "state": "completed",
+            "stage": "completed",
+            "detail": "Concluída; os arquivos estão prontos.",
+            "progress": 1.0,
+            "completedParts": 3,
+            "totalParts": 3,
+            "provenance": "audio_transcription",
+            "costLabel": "Custo estimado: cerca de US$ 0,08",
+            "usageLabel": "Uso informado: 18.240 tokens",
+            "outputGroups": {
+                "improved": [
+                    str(tmp_path / "Entrevista — texto melhorado.docx"),
+                    str(tmp_path / "Entrevista — texto melhorado.txt"),
+                ],
+                "original": [
+                    str(tmp_path / "Entrevista — transcrição.docx"),
+                    str(tmp_path / "Entrevista — transcrição.txt"),
+                ],
+                "captions": [str(tmp_path / "Entrevista.srt")],
+            },
+        }
+    else:
+        active_job = {
+            "id": "probe-failed",
+            "title": "Entrevista extensa.mp4",
+            "state": "failed",
+            "stage": "improving",
+            "detail": (
+                "Não foi possível melhorar o texto. A transcrição original está "
+                "preservada e os arquivos finais ainda não foram criados."
+            ),
+            "progress": 0.78,
+            "completedParts": 1,
+            "totalParts": 3,
+            "provenance": "audio_transcription",
+            "costLabel": "Custo estimado: cerca de US$ 0,04",
+            "usageLabel": "Uso informado: 9.120 tokens",
+            "outputGroups": {},
+        }
+
+    backend = ProbeBackend("transcribe", active_job)
+    engine = QQmlApplicationEngine()
+    warnings: list[str] = []
+    engine.warnings.connect(
+        lambda messages: warnings.extend(message.toString() for message in messages)
+    )
+    engine.rootContext().setContextProperty("appBackend", backend)
+
+    try:
+        engine.load(QUrl.fromLocalFile(str(QML_MAIN)))
+        _settle(qt_app, 180)
+        window = engine.rootObjects()[0]
+        assert isinstance(window, QQuickWindow)
+        window.setWidth(1024)
+        window.setHeight(680)
+        window.show()
+        _settle(qt_app, 120)
+        assert not warnings
+
+        scroll = _quick_item(window, "transcribePageScroll")
+        marker = _quick_item(window, "transcribePageEndMarker")
+        _scroll_to_end(qt_app, window, scroll, marker)
+        screenshot = window.grabWindow()
+        assert screenshot.save(str(tmp_path / f"transcribe-{variant}.png"))
+    finally:
+        for root in engine.rootObjects():
+            if isinstance(root, QQuickWindow):
+                root.close()
+        engine.deleteLater()
+        _settle(qt_app, 40)
+
+
+def test_third_party_notices_open_scroll_and_close_inside_the_app(
+    qt_app: QGuiApplication,
+    tmp_path: Path,
+) -> None:
+    backend = ProbeBackend("about")
+    engine = QQmlApplicationEngine()
+    engine.rootContext().setContextProperty("appBackend", backend)
+
+    try:
+        engine.load(QUrl.fromLocalFile(str(QML_MAIN)))
+        _settle(qt_app, 180)
+        window = engine.rootObjects()[0]
+        assert isinstance(window, QQuickWindow)
+        window.setWidth(1024)
+        window.setHeight(680)
+        window.show()
+        _settle(qt_app, 120)
+
+        popup = window.findChild(QObject, "thirdPartyNoticesPopup")
+        assert popup is not None
+        assert QMetaObject.invokeMethod(popup, "open")
+        _settle(qt_app, 120)
+        assert bool(popup.property("opened"))
+
+        scroll = _quick_item(window, "thirdPartyNoticesScroll")
+        assert _number(scroll, "contentHeight") > _number(scroll, "height")
+        scroll.forceActiveFocus()
+        QTest.keyClick(window, Qt.Key.Key_End)
+        _settle(qt_app)
+        assert _number(scroll, "contentY") > 0
+
+        assert window.findChild(QObject, "thirdPartyNoticesCloseIcon") is not None
+        assert window.findChild(QObject, "thirdPartyNoticesCloseButton") is not None
+        screenshot = window.grabWindow()
+        assert screenshot.save(str(tmp_path / "third-party-notices.png"))
+
+        QTest.keyClick(window, Qt.Key.Key_Escape)
+        _settle(qt_app)
+        assert not bool(popup.property("opened"))
     finally:
         for root in engine.rootObjects():
             if isinstance(root, QQuickWindow):

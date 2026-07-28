@@ -44,6 +44,7 @@ class FakePipeline:
         self.release = threading.Event()
         self.block = False
         self.sources: list[str] = []
+        self.options: list[PipelineOptions] = []
         self.ran_outside_gui_thread = False
 
     def list_jobs(self) -> tuple[Any, ...]:
@@ -66,6 +67,7 @@ class FakePipeline:
             application is not None and QThread.currentThread() is not application.thread()
         )
         self.sources.append(source)
+        self.options.append(options)
         self.started.set()
         while self.block and not self.release.wait(0.01):
             cancellation.raise_if_cancelled()
@@ -213,7 +215,7 @@ def submission(*sources: Path) -> dict[str, Any]:
         "language": "auto",
         "formats": ["txt"],
         "outputFolder": "",
-        "preferExistingCaptions": True,
+        "includeTimestamps": False,
     }
 
 
@@ -361,7 +363,6 @@ def test_settings_send_secrets_only_to_the_secure_store(
             "openAiApiKey": "sk-test-secret",
             "geminiApiKey": "gemini-test-secret",
             "outputFolder": str(tmp_path),
-            "rememberWindowGeometry": True,
             "notifyOnCompletion": False,
             "resumeInterruptedJobs": True,
         }
@@ -379,6 +380,7 @@ def test_settings_send_secrets_only_to_the_secure_store(
     assert "gemini-test-secret" not in repr(persisted)
     assert "sk-test-secret" not in repr(instance.settings)
     assert instance.settings["openAiKeyMasked"].startswith("••••")
+    assert "rememberWindowGeometry" not in instance.settings
 
 
 def test_unknown_errors_are_redacted_before_reaching_qml() -> None:
@@ -386,3 +388,52 @@ def test_unknown_errors_are_redacted_before_reaching_qml() -> None:
         RuntimeError("sk-proj-secret https://example.test/?token=secret")
     )
     assert message == "Não foi possível concluir a transcrição."
+
+
+def test_submission_passes_improvement_option_without_exposing_routing(
+    backend,
+    application: QApplication,
+    tmp_path: Path,
+) -> None:
+    instance, pipeline = backend
+    source = tmp_path / "melhorar.wav"
+    source.write_bytes(b"media")
+    values = submission(source)
+    values["improveWithAi"] = True
+
+    instance.startTranscription(values)
+    wait_until(application, lambda: not instance.busy)
+
+    assert pipeline.options[-1].improve_with_ai is True
+    assert "editorialModel" not in values
+    assert "reasoningEffort" not in values
+
+
+def test_manifest_ui_exposes_only_formatted_cost_and_simple_stage(tmp_path) -> None:
+    store = JobStore(tmp_path / "jobs")
+    manifest = store.create_job(
+        source="audio.wav",
+        chunks=(ChunkSpec(0, 0, 10),),
+        provider="openai",
+        model="gpt-4o-mini-transcribe",
+        settings={"formats": ["txt"], "improve_with_ai": True},
+        metadata={
+            "source_name": "audio.wav",
+            "pipeline_stage": "improving",
+            "cost_summary": {
+                "usd": "0.0042",
+                "available": True,
+                "partial": False,
+                "proven_zero": False,
+                "reported_tokens": 1_240,
+            },
+        },
+    )
+    manifest = store.set_status(manifest.job_id, JobStatus.RUNNING)
+
+    value = backend_module._manifest_to_ui(manifest)  # noqa: SLF001
+
+    assert value["stage"] == "improving"
+    assert value["costLabel"] == "Custo até agora: menos de US$ 0,01"
+    assert value["usageLabel"] == "Uso informado: 1.240 tokens"
+    assert "price_version" not in value

@@ -3,9 +3,11 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable
 from contextlib import suppress
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from sao_francisco.core.cancellation import CancellationToken
+from sao_francisco.core.costs import UsageMetrics
 from sao_francisco.core.models import Segment, Transcript, WordTiming
 from sao_francisco.providers.base import ProviderError, ProviderRequest
 
@@ -121,6 +123,7 @@ def _parse_response(response: Any, duration: float, model_id: str) -> Transcript
         text = str(data.get("text") or getattr(response, "text", "")).strip()
         segments = _estimated_text_segments(text, duration) if text else ()
         timestamp_kind = "estimated"
+    usage = _usage_metrics(_as_mapping(data.get("usage")))
     return Transcript(
         segments=segments,
         language=_optional_text(data.get("language")),
@@ -129,6 +132,7 @@ def _parse_response(response: Any, duration: float, model_id: str) -> Transcript
             "provider": "openai",
             "model": model_id,
             "timestamps": timestamp_kind,
+            "usage": usage.to_dict(),
         },
     )
 
@@ -216,10 +220,36 @@ def _as_mapping(value: Any) -> dict[str, Any]:
         if isinstance(dumped, dict):
             return dumped
     result: dict[str, Any] = {}
-    for field in ("text", "segments", "words", "language", "duration"):
+    for field in ("text", "segments", "words", "language", "duration", "usage", "model"):
         if hasattr(value, field):
             result[field] = getattr(value, field)
     return result
+
+
+def _usage_metrics(value: dict[str, Any]) -> UsageMetrics:
+    if str(value.get("type") or "").casefold() == "duration":
+        return UsageMetrics(duration_seconds=_optional_number(value.get("seconds")))
+    return UsageMetrics(
+        input_tokens=_optional_int(value.get("input_tokens")),
+        output_tokens=_optional_int(value.get("output_tokens")),
+        total_tokens=_optional_int(value.get("total_tokens")),
+    )
+
+
+def _optional_int(value: Any) -> int | None:
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return None
+    return number if number >= 0 else None
+
+
+def _optional_number(value: Any) -> Decimal | None:
+    try:
+        number = Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        return None
+    return number if number >= 0 else None
 
 
 def _value(value: Any, field: str, default: Any) -> Any:

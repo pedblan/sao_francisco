@@ -4,6 +4,12 @@ from types import SimpleNamespace
 
 from sao_francisco.core import CancellationToken, OperationCancelled
 from sao_francisco.providers.base import ProviderRequest
+from sao_francisco.providers.editorial import (
+    EDITORIAL_INSTRUCTIONS,
+    EditorialRequest,
+    GeminiEditorialProvider,
+    OpenAIEditorialProvider,
+)
 from sao_francisco.providers.gemini_provider import (
     TRANSCRIPT_SCHEMA,
     GeminiProvider,
@@ -262,3 +268,95 @@ def test_gemini_cancellation_closes_an_in_flight_client(tmp_path) -> None:
     assert closed.is_set()
     assert len(outcome) == 1
     assert isinstance(outcome[0], OperationCancelled)
+
+
+def test_openai_editorial_uses_responses_without_tools_or_storage() -> None:
+    captured = {}
+
+    class Responses:
+        def create(self, **values):
+            captured.update(values)
+            return SimpleNamespace(
+                output_text="Ana: Foram 27 casos.",
+                model="gpt-5.6-terra",
+                usage={
+                    "input_tokens": 100,
+                    "input_tokens_details": {
+                        "cached_tokens": 20,
+                        "cache_write_tokens": 0,
+                    },
+                    "output_tokens": 40,
+                    "output_tokens_details": {"reasoning_tokens": 5},
+                    "total_tokens": 140,
+                },
+            )
+
+    class Client:
+        responses = Responses()
+
+        def close(self):
+            return None
+
+    class Provider(OpenAIEditorialProvider):
+        def _client(self):
+            return Client()
+
+    response = Provider("segredo").improve(
+        EditorialRequest(
+            block_id="bloco-1",
+            text="Ana: foram 27 casos",
+            model_id="gpt-5.6-terra",
+            reasoning_effort="none",
+        ),
+        CancellationToken(),
+    )
+
+    assert response.text == "Ana: Foram 27 casos."
+    assert response.usage.total_tokens == 140
+    assert captured["store"] is False
+    assert captured["reasoning"] == {"effort": "none"}
+    assert "tools" not in captured
+    assert EDITORIAL_INSTRUCTIONS in captured["instructions"]
+    assert "<bloco_alvo" in captured["input"]
+
+
+def test_gemini_editorial_uses_same_contract_and_captures_usage() -> None:
+    captured = {}
+
+    class Interactions:
+        def create(self, **values):
+            captured.update(values)
+            return SimpleNamespace(
+                output_text="Texto melhorado.",
+                model="gemini-3.5-flash-lite",
+                usage={
+                    "inputTokenCount": 80,
+                    "outputTokenCount": 20,
+                    "thoughtsTokenCount": 5,
+                    "totalTokenCount": 105,
+                },
+            )
+
+    class Client:
+        interactions = Interactions()
+
+        def close(self):
+            return None
+
+    class Provider(GeminiEditorialProvider):
+        def _client(self):
+            return Client()
+
+    response = Provider("segredo").improve(
+        EditorialRequest(
+            block_id="bloco-1",
+            text="texto melhorado",
+            model_id="gemini-3.5-flash-lite",
+        ),
+        CancellationToken(),
+    )
+
+    assert response.usage.total_tokens == 105
+    assert response.usage.reasoning_in_output is False
+    assert captured["model"] == "gemini-3.5-flash-lite"
+    assert EDITORIAL_INSTRUCTIONS in captured["input"]

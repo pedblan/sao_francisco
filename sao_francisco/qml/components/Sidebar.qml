@@ -138,7 +138,7 @@ Rectangle {
                     }
                     Text {
                         Layout.fillWidth: true
-                        text: "Escutar. Transcrever."
+                    text: "Abençoe sua transcrição"
                         color: App.Theme.textMuted
                         font.family: App.Theme.uiFont
                         font.pixelSize: 10

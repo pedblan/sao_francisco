@@ -19,6 +19,7 @@ from sao_francisco.core import (
     parse_srt,
     parse_vtt,
 )
+from sao_francisco.core.media import _default_ytdlp_command, _resolve_executable
 
 SAMPLE_VTT = """WEBVTT
 
@@ -48,6 +49,35 @@ Segunda linha.
     assert vtt_transcript.segments[0].speaker == "Ana"
     assert vtt_transcript.segments[1].text == "Tudo bem?"
     assert vtt_transcript.duration == 4
+
+
+def test_progressive_youtube_vtt_cues_are_deduplicated_and_compacted() -> None:
+    progressive = """WEBVTT
+
+00:00:03.000 --> 00:00:03.800
+trata-se de um projeto de lei já
+
+00:00:03.800 --> 00:00:07.800
+trata-se de um projeto de lei já
+aprovado que detalha o
+
+00:00:07.800 --> 00:00:07.900
+aprovado que detalha o
+
+00:00:07.900 --> 00:00:11.000
+aprovado que detalha o
+investimento nas estradas
+"""
+
+    transcript = parse_vtt(progressive, language="pt")
+
+    assert len(transcript.segments) == 1
+    assert transcript.text == (
+        "trata-se de um projeto de lei já aprovado que detalha o "
+        "investimento nas estradas"
+    )
+    assert transcript.text.count("aprovado que detalha o") == 1
+    assert transcript.segments[0].metadata["rolling_cues_normalized"] is True
 
 
 def test_bitmap_subtitle_codecs_are_explicitly_classified() -> None:
@@ -295,3 +325,26 @@ def test_cancelled_media_command_does_not_start_subprocess() -> None:
     token.cancel()
     with pytest.raises(OperationCancelled):
         MediaProcessor()._run(["executable-that-does-not-exist"], cancel_token=token)
+
+
+def test_executable_resolution_uses_the_explicit_search_path(tmp_path) -> None:
+    executable = tmp_path / "media-tool"
+    executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    executable.chmod(0o755)
+
+    assert _resolve_executable("media-tool", str(tmp_path)) == str(executable)
+
+
+def test_default_ytdlp_command_uses_bundled_executable_when_frozen(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr("sao_francisco.core.media.sys.frozen", True, raising=False)
+    monkeypatch.setattr(
+        "sao_francisco.core.media.sys.executable",
+        "/Applications/São Francisco.app/Contents/MacOS/São Francisco",
+    )
+
+    assert _default_ytdlp_command() == (
+        "/Applications/São Francisco.app/Contents/MacOS/São Francisco",
+        "--yt-dlp",
+    )

@@ -121,11 +121,13 @@ Item {
         sourceMode = "files"
         providerCombo.currentIndex = 0
         languageCombo.currentIndex = 0
-        preferCaptions.checked = true
+        preferCaptions.checked = false
         docxFormat.checked = true
         txtFormat.checked = true
         srtFormat.checked = true
         vttFormat.checked = false
+        includeTimestamps.checked = false
+        improveWithAi.checked = false
         callBackend("setPendingSources", [[]])
         pageScroll.contentY = Number(pageScroll.originY || 0)
         if (shell)
@@ -181,7 +183,10 @@ Item {
             "language": String(languageCombo.currentValue),
             "formats": selectedFormats(),
             "outputFolder": outputFolder.text.trim(),
-            "preferExistingCaptions": preferCaptions.checked
+            "preferExistingCaptions": root.sourceMode === "url"
+                                      && preferCaptions.checked,
+            "includeTimestamps": includeTimestamps.checked,
+            "improveWithAi": improveWithAi.checked
         }
         callBackend("startTranscription", [payload])
     }
@@ -196,7 +201,15 @@ Item {
         return labels[value] || ""
     }
 
-    function jobStatusLabel(value) {
+    function jobStatusLabel(value, stage) {
+        if (value === "running" && stage === "improving")
+            return "Melhorando o texto"
+        if (value === "running" && stage === "exporting")
+            return "Criando arquivos"
+        if (value === "failed" && stage === "improving")
+            return "Não foi possível melhorar"
+        if (value === "failed" && stage === "export_failed")
+            return "Não foi possível exportar"
         const labels = {
             "preparing": "Preparando",
             "running": "Em andamento",
@@ -216,6 +229,18 @@ Item {
         if (value === "paused")
             return "warning"
         return "accent"
+    }
+
+    function fileName(value) {
+        const normalized = String(value || "").replace(/\\/g, "/")
+        const parts = normalized.split("/")
+        return parts.length > 0 ? parts[parts.length - 1] : normalized
+    }
+
+    function groupHasFiles(name) {
+        const groups = root.activeJob ? root.activeJob.outputGroups : null
+        const values = groups ? groups[name] : null
+        return Boolean(values && values.length > 0)
     }
 
     function syncJob() {
@@ -297,7 +322,7 @@ Item {
             Components.PageHeader {
                 Layout.fillWidth: true
                 title: "Transforme áudio e vídeo em texto"
-                description: "Use arquivos do computador ou um endereço do YouTube e serviços semelhantes. Vídeos longos são processados em partes e retomados com segurança."
+                description: "Escolha um arquivo do computador ou cole o endereço de um vídeo. Depois, selecione o serviço, o modelo e os arquivos que deseja receber."
             }
 
             Components.AppCard {
@@ -561,7 +586,7 @@ Item {
                     }
                     Text {
                         Layout.fillWidth: true
-                        text: "São aceitos endereços públicos compatíveis com o baixador configurado pelo aplicativo."
+                        text: "Cole o endereço público do vídeo que deseja transcrever."
                         color: App.Theme.textMuted
                         font.family: App.Theme.uiFont
                         font.pixelSize: 12
@@ -569,49 +594,14 @@ Item {
                     }
                 }
 
-                Rectangle {
+                CheckBox {
+                    id: preferCaptions
+                    visible: root.sourceMode === "url"
                     Layout.fillWidth: true
-                    implicitHeight: captionsLayout.implicitHeight + 24
-                    radius: App.Theme.radius
-                    color: App.Theme.primarySoft
-
-                    RowLayout {
-                        id: captionsLayout
-                        anchors.fill: parent
-                        anchors.margins: 12
-                        spacing: 12
-
-                        Switch {
-                            id: preferCaptions
-                            checked: true
-                            Accessible.name: "Preferir legendas existentes"
-                        }
-
-                        ColumnLayout {
-                            Layout.fillWidth: true
-                            spacing: 2
-                            Text {
-                                Layout.fillWidth: true
-                                text: "Preferir legendas existentes"
-                                color: App.Theme.text
-                                font.family: App.Theme.uiFont
-                                font.pixelSize: App.Theme.bodySize
-                                font.weight: Font.DemiBold
-                                wrapMode: Text.WordWrap
-                            }
-                            Text {
-                                Layout.fillWidth: true
-                                text: root.sourceMode === "url"
-                                      ? "Legendas manuais ou automáticas serão usadas sem API. Se não existirem, o áudio será transcrito normalmente."
-                                      : "O aplicativo procura arquivos SRT/VTT ao lado da mídia e faixas textuais incorporadas. Se não encontrar, transcreve o áudio."
-                                color: App.Theme.textMuted
-                                font.family: App.Theme.uiFont
-                                font.pixelSize: 12
-                                lineHeight: 1.25
-                                wrapMode: Text.WordWrap
-                            }
-                        }
-                    }
+                    text: "Usar legendas disponíveis no vídeo"
+                    checked: false
+                    font.family: App.Theme.uiFont
+                    Accessible.name: text
                 }
             }
 
@@ -697,13 +687,26 @@ Item {
                             valueRole: "id"
                             model: [
                                 {
-                                    "label": "Detectar automaticamente — recomendado",
+                                    "label": "Detectar automaticamente",
                                     "id": "auto"
                                 },
                                 { "label": "Português", "id": "pt" },
                                 { "label": "Inglês", "id": "en" },
                                 { "label": "Espanhol", "id": "es" },
-                                { "label": "Francês", "id": "fr" }
+                                { "label": "Francês", "id": "fr" },
+                                { "label": "Alemão", "id": "de" },
+                                { "label": "Italiano", "id": "it" },
+                                { "label": "Catalão", "id": "ca" },
+                                { "label": "Holandês", "id": "nl" },
+                                { "label": "Polonês", "id": "pl" },
+                                { "label": "Russo", "id": "ru" },
+                                { "label": "Ucraniano", "id": "uk" },
+                                { "label": "Árabe", "id": "ar" },
+                                { "label": "Hebraico", "id": "he" },
+                                { "label": "Hindi", "id": "hi" },
+                                { "label": "Japonês", "id": "ja" },
+                                { "label": "Coreano", "id": "ko" },
+                                { "label": "Chinês", "id": "zh" }
                             ]
                             Accessible.name: "Idioma do conteúdo"
                         }
@@ -788,35 +791,46 @@ Item {
                             Accessible.name: "Gerar legenda VTT"
                         }
                     }
-                }
-
-                Rectangle {
-                    Layout.fillWidth: true
-                    implicitHeight: summaryRow.implicitHeight + 22
-                    radius: App.Theme.radius
-                    color: App.Theme.background
-                    border.width: 1
-                    border.color: App.Theme.border
-
-                    RowLayout {
-                        id: summaryRow
-                        anchors.fill: parent
-                        anchors.margins: 11
-                        spacing: 10
-
-                        Components.Icon {
-                            name: "check"
-                            iconSize: 18
-                            iconColor: App.Theme.primary
+                    CheckBox {
+                        id: includeTimestamps
+                        Layout.fillWidth: true
+                        text: "Incluir marcações de tempo no DOCX e TXT"
+                        checked: false
+                        font.family: App.Theme.uiFont
+                        Accessible.name: text
+                    }
+                    CheckBox {
+                        id: improveWithAi
+                        objectName: "improveWithAiCheck"
+                        Layout.fillWidth: true
+                        text: "Melhorar com IA"
+                        checked: false
+                        enabled: docxFormat.checked || txtFormat.checked
+                        font.family: App.Theme.uiFont
+                        Accessible.name: text
+                        Accessible.description: "Organiza em parágrafos e corrige pontuação e erros evidentes, sem resumir."
+                        onEnabledChanged: {
+                            if (!enabled)
+                                checked = false
                         }
-                        Text {
-                            Layout.fillWidth: true
-                            text: "O áudio é extraído, dividido em partes seguras e reunido em uma transcrição contínua."
-                            color: App.Theme.textMuted
-                            font.family: App.Theme.uiFont
-                            font.pixelSize: 12
-                            wrapMode: Text.WordWrap
-                        }
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        text: "Organiza em parágrafos e corrige pontuação e erros evidentes, sem resumir."
+                        color: App.Theme.textMuted
+                        font.family: App.Theme.uiFont
+                        font.pixelSize: 12
+                        wrapMode: Text.WordWrap
+                    }
+                    Text {
+                        visible: improveWithAi.checked
+                        Layout.fillWidth: true
+                        text: "Confira especialmente nomes, números e trechos pouco claros."
+                        color: App.Theme.secondary
+                        font.family: App.Theme.uiFont
+                        font.pixelSize: 12
+                        font.weight: Font.DemiBold
+                        wrapMode: Text.WordWrap
                     }
                 }
 
@@ -826,7 +840,7 @@ Item {
 
                     Text {
                         Layout.fillWidth: true
-                        text: "O uso de modelos em nuvem pode gerar cobrança no provedor."
+                        text: "O valor aproximado aparecerá durante o trabalho. A cobrança oficial fica na conta do serviço escolhido."
                         color: App.Theme.textMuted
                         font.family: App.Theme.uiFont
                         font.pixelSize: 12
@@ -879,7 +893,8 @@ Item {
 
                     Components.StatusPill {
                         text: root.jobStatusLabel(
-                                  String(root.activeJob.state || ""))
+                                  String(root.activeJob.state || ""),
+                                  String(root.activeJob.stage || ""))
                         tone: root.jobTone(
                                   String(root.activeJob.state || ""))
                     }
@@ -895,10 +910,119 @@ Item {
                                     || root.activeJob.state === "running")
                                    && (root.activeJob.progress === undefined
                                        || Number(root.activeJob.totalParts || 0) <= 0)
-                    Accessible.name: "Progresso da transcrição"
+                    palette.highlight: App.Theme.primary
+                    palette.base: App.Theme.surfaceMuted
+                    Accessible.name: "Progresso do trabalho"
                     Accessible.description: indeterminate
                                             ? "Progresso ainda não calculado"
                                             : Math.round(value * 100) + "%"
+                }
+
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 3
+                    visible: String(root.activeJob.costLabel || "").length > 0
+                             || String(root.activeJob.usageLabel || "").length > 0
+
+                    Text {
+                        Layout.fillWidth: true
+                        text: String(root.activeJob.costLabel || "")
+                        visible: text.length > 0
+                        color: App.Theme.text
+                        font.family: App.Theme.uiFont
+                        font.pixelSize: 13
+                        font.weight: Font.DemiBold
+                        wrapMode: Text.WordWrap
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        text: String(root.activeJob.usageLabel || "")
+                        visible: text.length > 0
+                        color: App.Theme.textMuted
+                        font.family: App.Theme.uiFont
+                        font.pixelSize: 12
+                        wrapMode: Text.WordWrap
+                    }
+                }
+
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 10
+                    visible: root.activeJob.state === "completed"
+                             && root.activeJob.outputGroups
+
+                    Text {
+                        visible: root.groupHasFiles("improved")
+                        text: "Texto melhorado"
+                        color: App.Theme.text
+                        font.family: App.Theme.uiFont
+                        font.pixelSize: 13
+                        font.weight: Font.DemiBold
+                    }
+                    Flow {
+                        Layout.fillWidth: true
+                        spacing: 8
+                        visible: root.groupHasFiles("improved")
+                        Repeater {
+                            model: root.activeJob.outputGroups
+                                   ? root.activeJob.outputGroups.improved || [] : []
+                            Components.AppButton {
+                                required property string modelData
+                                text: root.fileName(modelData)
+                                variant: "secondary"
+                                compact: true
+                                onClicked: root.callBackend("openOutputPath", [modelData])
+                            }
+                        }
+                    }
+                    Text {
+                        visible: root.groupHasFiles("original")
+                        text: "Transcrição original"
+                        color: App.Theme.text
+                        font.family: App.Theme.uiFont
+                        font.pixelSize: 13
+                        font.weight: Font.DemiBold
+                    }
+                    Flow {
+                        Layout.fillWidth: true
+                        spacing: 8
+                        visible: root.groupHasFiles("original")
+                        Repeater {
+                            model: root.activeJob.outputGroups
+                                   ? root.activeJob.outputGroups.original || [] : []
+                            Components.AppButton {
+                                required property string modelData
+                                text: root.fileName(modelData)
+                                variant: "secondary"
+                                compact: true
+                                onClicked: root.callBackend("openOutputPath", [modelData])
+                            }
+                        }
+                    }
+                    Text {
+                        visible: root.groupHasFiles("captions")
+                        text: "Legendas"
+                        color: App.Theme.text
+                        font.family: App.Theme.uiFont
+                        font.pixelSize: 13
+                        font.weight: Font.DemiBold
+                    }
+                    Flow {
+                        Layout.fillWidth: true
+                        spacing: 8
+                        visible: root.groupHasFiles("captions")
+                        Repeater {
+                            model: root.activeJob.outputGroups
+                                   ? root.activeJob.outputGroups.captions || [] : []
+                            Components.AppButton {
+                                required property string modelData
+                                text: root.fileName(modelData)
+                                variant: "secondary"
+                                compact: true
+                                onClicked: root.callBackend("openOutputPath", [modelData])
+                            }
+                        }
+                    }
                 }
 
                 RowLayout {

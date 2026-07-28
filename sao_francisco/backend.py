@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import uuid
 from collections import deque
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -41,6 +42,8 @@ from .core import (
     MediaDependencyError,
     MediaProcessor,
     OperationCancelled,
+    format_cost_label,
+    format_usage_label,
 )
 from .credentials import (
     CredentialError,
@@ -264,6 +267,21 @@ class AppBackend(QObject):
     def appVersion(self) -> str:  # noqa: N802
         return __version__
 
+    @Property(str, constant=True)
+    def thirdPartyNoticesMarkdown(self) -> str:  # noqa: N802
+        package = Path(__file__).resolve().parent
+        candidates = (
+            package / "THIRD_PARTY_NOTICES.md",
+            package.parent / "THIRD_PARTY_NOTICES.md",
+        )
+        target = next((path for path in candidates if path.is_file()), None)
+        if target is None:
+            return "# Avisos de terceiros\n\nOs avisos não foram encontrados neste pacote."
+        try:
+            return target.read_text(encoding="utf-8")
+        except (OSError, UnicodeError):
+            return "# Avisos de terceiros\n\nOs avisos não puderam ser lidos."
+
     @Property(str, notify=activeJobStateChanged)
     def activeJobState(self) -> str:  # noqa: N802
         return str(self._active_job.get("state", ""))
@@ -425,6 +443,12 @@ class AppBackend(QObject):
         if output is None or not _open_local_path(output):
             self.toastRequested.emit("O resultado não está disponível neste computador.")
 
+    @Slot(str)
+    def openOutputPath(self, raw_path: str) -> None:  # noqa: N802
+        path = Path(raw_path).expanduser()
+        if not path.is_file() or not _open_local_path(path):
+            self.toastRequested.emit("Este arquivo não está disponível neste computador.")
+
     @Slot()
     def revealActiveOutput(self) -> None:  # noqa: N802
         output = self._active_output()
@@ -511,10 +535,6 @@ class AppBackend(QObject):
 
             self._settings_store.setValue("preferences/outputFolder", output)
             self._settings_store.setValue(
-                "preferences/rememberWindowGeometry",
-                bool(values.get("rememberWindowGeometry", True)),
-            )
-            self._settings_store.setValue(
                 "preferences/notifyOnCompletion",
                 bool(values.get("notifyOnCompletion", True)),
             )
@@ -548,18 +568,6 @@ class AppBackend(QObject):
             return "Nenhuma chave foi informada."
         self._credentialTestRequested.emit(_CredentialTest(selected, secret))
         return None
-
-    @Slot()
-    def openThirdPartyNotices(self) -> None:  # noqa: N802
-        package = Path(__file__).resolve().parent
-        candidates = (
-            package / "THIRD_PARTY_NOTICES.md",
-            package.parent / "THIRD_PARTY_NOTICES.md",
-            package / "licenses",
-        )
-        target = next((path for path in candidates if path.exists()), None)
-        if target is None or not _open_local_path(target):
-            self.toastRequested.emit("Os avisos de terceiros não foram encontrados.")
 
     @Slot(str, result="QVariantList")
     def searchHelp(self, query: str) -> list[dict[str, str]]:  # noqa: N802
@@ -725,6 +733,10 @@ class AppBackend(QObject):
             state="completed",
             detail="Concluída; os arquivos estão prontos.",
             outputPaths=[str(path) for path in result.outputs],
+            outputGroups={
+                key: [str(path) for path in paths]
+                for key, paths in result.output_groups.items()
+            },
             primaryOutput=str(result.primary_output or ""),
         )
         self._set_active_job(item)
@@ -842,7 +854,6 @@ class AppBackend(QObject):
             "openAiKeyMasked": _masked_credential("openai"),
             "geminiKeyMasked": _masked_credential("gemini"),
             "outputFolder": self._output_folder,
-            "rememberWindowGeometry": self._preference_bool("rememberWindowGeometry", True),
             "notifyOnCompletion": self._preference_bool("notifyOnCompletion", True),
             "resumeInterruptedJobs": self._preference_bool("resumeInterruptedJobs", True),
         }
@@ -860,6 +871,25 @@ def _manifest_to_ui(manifest: JobManifest) -> dict[str, Any]:
         if Path(str(path)).is_file()
     ]
     primary = str(manifest.metadata.get("primary_output") or "")
+    raw_groups = manifest.metadata.get("output_groups")
+    output_groups: dict[str, list[str]] = {}
+    if isinstance(raw_groups, Mapping):
+        for key in ("improved", "original", "captions"):
+            output_groups[key] = [
+                str(path)
+                for path in raw_groups.get(key, ())
+                if Path(str(path)).is_file()
+            ]
+    raw_summary = manifest.metadata.get("cost_summary")
+    summary = raw_summary if isinstance(raw_summary, Mapping) else {}
+    if not summary or (
+        summary.get("usd") is None and not summary.get("proven_zero")
+    ):
+        raw_forecast = manifest.metadata.get("cost_forecast")
+        if isinstance(raw_forecast, Mapping):
+            summary = raw_forecast
+    state = _ui_status(manifest.status)
+    stage = str(manifest.metadata.get("pipeline_stage") or "")
     return {
         "id": manifest.job_id,
         "title": str(manifest.metadata.get("source_name") or _display_source(manifest.source)),
@@ -872,14 +902,43 @@ def _manifest_to_ui(manifest: JobManifest) -> dict[str, Any]:
         "providerLabel": provider_label,
         "model": manifest.model,
         "modelLabel": model_label,
-        "state": _ui_status(manifest.status),
-        "progress": manifest.progress,
+        "state": state,
+        "stage": stage,
+        "progress": _overall_progress(manifest, stage),
         "completedParts": len(manifest.completed_chunks),
         "totalParts": len(manifest.chunks),
         "provenance": str(manifest.metadata.get("provenance") or ""),
         "outputPaths": output_paths,
+        "outputGroups": output_groups,
         "primaryOutput": primary if Path(primary).is_file() else "",
+        "costLabel": format_cost_label(
+            summary,
+            in_progress=state not in {"completed", "failed", "cancelled", "paused"},
+        ),
+        "usageLabel": format_usage_label(summary),
+        "improveWithAi": bool(manifest.settings.get("improve_with_ai", False)),
     }
+
+
+def _overall_progress(manifest: JobManifest, stage: str) -> float:
+    improve = bool(manifest.settings.get("improve_with_ai", False))
+    if manifest.status == JobStatus.COMPLETED:
+        return 1.0
+    if stage in {"exporting", "export_failed"}:
+        return 0.97
+    if stage == "improvement_complete":
+        return 0.95
+    if stage == "improving":
+        total = max(1, int(manifest.metadata.get("editorial_total") or 1))
+        completed = min(
+            total,
+            max(0, int(manifest.metadata.get("editorial_completed") or 0)),
+        )
+        return 0.65 + 0.30 * completed / total
+    if stage == "transcription_complete":
+        return 0.65 if improve else 0.93
+    scale = 0.65 if improve else 0.93
+    return min(scale, max(0.0, manifest.progress * scale))
 
 
 def _ui_status(status: JobStatus) -> str:
@@ -950,7 +1009,10 @@ def _error_message(exc: BaseException) -> str:
     if isinstance(exc, ProviderError):
         return exc.message
     if isinstance(exc, MediaDependencyError):
-        return "Instale FFmpeg, ffprobe e yt-dlp para preparar esta mídia."
+        return (
+            "Não foi possível preparar esta mídia. Atualize o São Francisco "
+            "e tente novamente."
+        )
     if isinstance(exc, (CredentialError, PipelineError)):
         return str(exc)
     if isinstance(exc, OSError):

@@ -7,6 +7,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -175,6 +176,7 @@ _LANGUAGE_ALIASES = {
     "zho": "zh",
 }
 _UNDEFINED_LANGUAGES = frozenset({"", "und", "unknown", "zxx"})
+_MACOS_TOOL_DIRECTORIES = ("/opt/homebrew/bin", "/usr/local/bin")
 
 
 class MediaProcessor:
@@ -185,12 +187,17 @@ class MediaProcessor:
         *,
         ffmpeg: str = "ffmpeg",
         ffprobe: str = "ffprobe",
-        ytdlp: str = "yt-dlp",
+        ytdlp: str | Sequence[str] | None = None,
         work_root: str | os.PathLike[str] | None = None,
     ) -> None:
         self.ffmpeg = ffmpeg
         self.ffprobe = ffprobe
-        self.ytdlp = ytdlp
+        if ytdlp is None:
+            self.ytdlp = _default_ytdlp_command()
+        elif isinstance(ytdlp, str):
+            self.ytdlp = (ytdlp,)
+        else:
+            self.ytdlp = tuple(ytdlp)
         self.work_root = Path(work_root).expanduser().resolve() if work_root else None
 
     def create_workspace(self, label: str = "job") -> MediaWorkspace:
@@ -401,7 +408,7 @@ class MediaProcessor:
         try:
             self._run(
                 [
-                    self.ytdlp,
+                    *self.ytdlp,
                     "--ignore-config",
                     "--no-playlist",
                     "--no-warnings",
@@ -593,7 +600,7 @@ class MediaProcessor:
         try:
             metadata_result = self._run(
                 [
-                    self.ytdlp,
+                    *self.ytdlp,
                     "--ignore-config",
                     "--dump-single-json",
                     "--skip-download",
@@ -687,7 +694,7 @@ class MediaProcessor:
         )
         self._run(
             [
-                self.ytdlp,
+                *self.ytdlp,
                 "--ignore-config",
                 "--skip-download",
                 "--no-playlist",
@@ -751,21 +758,19 @@ class MediaProcessor:
     ) -> subprocess.CompletedProcess[str]:
         token = cancel_token or NEVER_CANCELLED
         token.raise_if_cancelled()
-        executable = command[0]
-        if not (
-            (os.path.isabs(executable) and os.access(executable, os.X_OK))
-            or shutil.which(executable)
-        ):
-            raise MediaDependencyError(f"required executable not found: {executable}")
+        environment = _subprocess_environment()
+        executable = _resolve_executable(command[0], environment["PATH"])
+        arguments = [executable, *command[1:]]
 
         process = subprocess.Popen(
-            list(command),
+            arguments,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
             encoding="utf-8",
             errors="replace",
+            env=environment,
         )
         while True:
             try:
@@ -916,3 +921,34 @@ class MediaProcessor:
     def _validate_url(cls, value: str) -> None:
         if not cls._is_url(value):
             raise ValueError("only http(s) media URLs are supported")
+
+
+def _subprocess_environment() -> dict[str, str]:
+    environment = dict(os.environ)
+    current = environment.get("PATH", "")
+    directories = [
+        directory
+        for directory in _MACOS_TOOL_DIRECTORIES
+        if Path(directory).is_dir()
+    ]
+    if current:
+        directories.extend(part for part in current.split(os.pathsep) if part)
+    environment["PATH"] = os.pathsep.join(dict.fromkeys(directories))
+    return environment
+
+
+def _default_ytdlp_command() -> tuple[str, ...]:
+    if getattr(sys, "frozen", False):
+        return (sys.executable, "--yt-dlp")
+    return ("yt-dlp",)
+
+
+def _resolve_executable(executable: str, search_path: str) -> str:
+    if os.path.isabs(executable):
+        if os.access(executable, os.X_OK):
+            return executable
+    else:
+        resolved = shutil.which(executable, path=search_path)
+        if resolved:
+            return resolved
+    raise MediaDependencyError(f"required executable not found: {executable}")

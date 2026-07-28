@@ -154,6 +154,7 @@ _TIMING_RE = re.compile(
 )
 _VOICE_RE = re.compile(r"<v(?:\.[^ >]+)*\s+([^>]+)>", re.IGNORECASE)
 _TAG_RE = re.compile(r"</?[^>]+>")
+_TOKEN_CLEAN_RE = re.compile(r"[^\w]+", re.UNICODE)
 
 
 def parse_timestamp(value: str) -> float:
@@ -180,9 +181,83 @@ def _clean_cue(lines: list[str]) -> tuple[str, str | None]:
     speaker = unescape(voice.group(1)).strip() if voice else None
     text = _TAG_RE.sub("", raw)
     text = unescape(text)
-    text = re.sub(r"[ \t]+\n", "\n", text)
-    text = re.sub(r"\n[ \t]+", "\n", text)
+    text = re.sub(r"\s+", " ", text)
     return text.strip(), speaker or None
+
+
+def _token_key(value: str) -> str:
+    return _TOKEN_CLEAN_RE.sub("", value.casefold())
+
+
+def _without_rolling_overlap(previous: str, current: str) -> tuple[str, bool]:
+    previous_words = previous.split()
+    current_words = current.split()
+    previous_keys = [_token_key(word) for word in previous_words]
+    current_keys = [_token_key(word) for word in current_words]
+    maximum = min(len(previous_keys), len(current_keys))
+    for size in range(maximum, 0, -1):
+        if previous_keys[-size:] == current_keys[:size]:
+            return " ".join(current_words[size:]), True
+    return current, False
+
+
+def _merge_incremental_cues(segments: list[Segment]) -> list[Segment]:
+    """Turn short incremental caption fragments into readable timed phrases."""
+
+    merged: list[Segment] = []
+    for segment in segments:
+        if not merged:
+            merged.append(segment)
+            continue
+        previous = merged[-1]
+        combined = f"{previous.text} {segment.text}".strip()
+        can_merge = (
+            previous.speaker == segment.speaker
+            and segment.start <= previous.end + 1.25
+            and len(combined) <= 180
+        )
+        if not can_merge:
+            merged.append(segment)
+            continue
+        merged[-1] = Segment(
+            start=previous.start,
+            end=max(previous.end, segment.end),
+            text=combined,
+            speaker=previous.speaker,
+            metadata={**dict(previous.metadata), "rolling_cues_normalized": True},
+        )
+    return merged
+
+
+def _normalize_rolling_cues(segments: list[Segment]) -> list[Segment]:
+    """Remove the progressive repetitions emitted by automatic WebVTT captions."""
+
+    normalized: list[Segment] = []
+    previous_raw: Segment | None = None
+    found_overlap = False
+    for segment in segments:
+        text = segment.text
+        overlap = False
+        if (
+            previous_raw is not None
+            and previous_raw.speaker == segment.speaker
+            and segment.start <= previous_raw.end + 0.25
+        ):
+            text, overlap = _without_rolling_overlap(previous_raw.text, text)
+        previous_raw = segment
+        found_overlap = found_overlap or overlap
+        if not text:
+            continue
+        normalized.append(
+            Segment(
+                start=segment.start,
+                end=segment.end,
+                text=text,
+                speaker=segment.speaker,
+                metadata=segment.metadata,
+            )
+        )
+    return _merge_incremental_cues(normalized) if found_overlap else normalized
 
 
 def _parse_blocks(text: str, *, language: str | None, source_format: str) -> Transcript:
@@ -221,6 +296,8 @@ def _parse_blocks(text: str, *, language: str | None, source_format: str) -> Tra
                 )
             )
 
+    if source_format == "vtt":
+        segments = _normalize_rolling_cues(segments)
     duration = max((segment.end for segment in segments), default=0.0)
     return Transcript(
         segments=tuple(segments),

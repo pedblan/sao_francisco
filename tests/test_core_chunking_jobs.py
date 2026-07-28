@@ -74,7 +74,9 @@ def test_job_store_resumes_from_individual_chunk_results(tmp_path) -> None:
     assert not list(store.job_directory(job.job_id).glob(".manifest.json.*.tmp"))
 
     completed = store.save_chunk_result(job.job_id, 1, Transcript(duration=10))
-    assert completed.status == JobStatus.COMPLETED
+    # The last transcription result is a checkpoint; only final export
+    # completes the whole job.
+    assert completed.status == JobStatus.RUNNING
     assert completed.progress == 1
 
 
@@ -100,7 +102,7 @@ def test_job_store_reconciles_result_written_before_manifest(tmp_path) -> None:
     resumed = store.resume_job(job.job_id)
 
     assert resumed.completed_chunks == frozenset({0})
-    assert resumed.status == JobStatus.COMPLETED
+    assert resumed.status == JobStatus.RUNNING
 
 
 def test_job_store_rejects_path_traversal(tmp_path) -> None:

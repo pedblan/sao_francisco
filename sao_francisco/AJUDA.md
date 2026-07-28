@@ -1,248 +1,262 @@
 # Ajuda do São Francisco
 
-O São Francisco transforma áudio, vídeo e mídias públicas da internet em texto.
-
-Para gravações longas, ele prepara o áudio no computador, divide a mídia em partes
-menores e preserva cada resultado concluído. Assim, uma interrupção não obriga você a
-começar tudo novamente.
+O São Francisco transforma áudio e vídeo em texto. Você pode escolher um arquivo do
+computador ou colar o endereço público de um vídeo.
 
 ## Primeiros passos
 
-Faça o primeiro teste com uma gravação curta e sem conteúdo importante:
+Para conhecer o aplicativo, comece com uma gravação curta:
 
 1. Abra **Configurações** e cadastre uma chave da OpenAI ou do Gemini.
 2. Volte a **Transcrever**.
-3. Escolha um arquivo local ou cole a URL de uma mídia pública.
-4. Selecione o modelo conforme a finalidade.
-5. Marque os formatos de saída desejados.
-6. Escolha a pasta de destino e pressione **Iniciar transcrição**.
-7. Acompanhe as etapas até aparecer **Concluído**.
+3. Escolha um arquivo ou cole o endereço de um vídeo.
+4. Selecione o serviço e o modelo.
+5. Marque os formatos que deseja receber.
+6. Escolha a pasta de destino.
+7. Pressione **Iniciar transcrição**.
 
-Os resultados ficam na pasta escolhida e também podem ser abertos pelo **Histórico**.
+Quando o trabalho terminar, os arquivos estarão na pasta escolhida. Você também poderá
+abri-los pela tela **Histórico**.
 
 ## Adicionar arquivo, vídeo ou URL
 
-O São Francisco aceita arquivos comuns de áudio e vídeo sempre que o FFmpeg conseguir
-ler a faixa de som. Entre os formatos habituais estão MP3, WAV, M4A, MP4, MOV, MKV e
-WebM.
+Na guia **Arquivos**, escolha um ou mais arquivos de áudio ou vídeo do computador.
+Formatos comuns, como MP3, WAV, M4A, MP4, MOV, MKV e WebM, são aceitos.
 
-Para uma URL, o aplicativo usa o yt-dlp para obter apenas o áudio necessário. O suporte a
-sites pode mudar quando a plataforma altera seu funcionamento. Conteúdo privado, pago,
-protegido por DRM, dependente de login ou transmitido ao vivo pode não funcionar.
+Na guia **YouTube ou endereço**, cole o endereço público do vídeo. Alguns conteúdos podem
+não estar disponíveis quando exigem login, assinatura, pagamento ou autorização especial
+do site.
 
-**URL pública** significa apenas que a mídia pode ser acessada sem autenticação. Isso não
-transforma o conteúdo em domínio público. Transcreva somente materiais que você tenha
-direito ou autorização para usar.
+Se quiser aproveitar o texto publicado com o vídeo, marque **Usar legendas disponíveis no
+vídeo**. O São Francisco remove repetições progressivas antes de criar o documento. A
+opção começa desmarcada; deixe-a assim quando preferir uma nova transcrição do áudio.
 
-### Aproveitar legendas existentes
-
-Ative **Preferir legendas existentes** para tentar evitar uma nova transcrição:
-
-1. Em arquivos locais, o aplicativo procura `.srt` ou `.vtt` com o mesmo nome e faixas de
-   legenda textuais incorporadas ao vídeo.
-2. Em URLs, procura primeiro legendas publicadas pelo autor e depois legendas automáticas,
-   dando preferência à faixa padrão ou ao idioma original informado pelo site.
-3. Se não encontrar uma legenda compatível, informa a situação e volta à transcrição do
-   áudio.
-
-Essa rota não usa a API e preserva as marcações de tempo. Legendas baseadas em imagem,
-como PGS e VobSub, exigem reconhecimento óptico e não são aproveitadas nesta versão.
+Um vídeo acessível na internet não é necessariamente de uso livre. Transcreva somente
+materiais que você tenha direito ou autorização para usar.
 
 ### Detectar o idioma
 
-**Detectar automaticamente — recomendado** deixa a OpenAI ou o Gemini reconhecer o idioma
-falado. Essa opção funciona bem quando a gravação contém um idioma principal e evita uma
-escolha desnecessária antes de começar.
+**Detectar automaticamente** deixa o serviço reconhecer o idioma falado. Também é
+possível informar o idioma diretamente.
 
-Escolha um idioma somente quando você já souber qual é o conteúdo ou precisar desfazer uma
-ambiguidade. A escolha funciona como pista para a API e como filtro para as legendas: uma
-faixa marcada como inglês, por exemplo, não será usada em um trabalho configurado como
-português. Se não existir legenda compatível, o aplicativo transcreve o áudio normalmente.
+Nenhuma das opções é sempre melhor. Indicar o idioma pode ajudar em gravações ruidosas,
+sotaques, nomes próprios e línguas parecidas. A detecção automática é útil quando você
+não sabe o idioma ou quando o conteúdo mistura mais de um.
 
 ## Escolher um modelo
 
-Os nomes da lista descrevem o uso recomendado:
+Os nomes da lista indicam o uso recomendado:
 
-- **Econômico — OpenAI:** boa opção inicial para texto contínuo.
-- **Maior precisão — OpenAI:** prioriza fidelidade em nomes e vocabulário.
-- **Identificar falantes — OpenAI:** separa participantes e fornece intervalos de fala.
-- **Legendas e tempos — OpenAI:** usa `whisper-1` para obter tempos precisos de segmentos.
-- **Gemini detalhado:** gera uma transcrição estruturada com falantes e tempos estimados.
-- **Gemini econômico:** alternativa de menor custo para grande volume.
+- **Econômico — OpenAI:** boa opção para começar e para textos contínuos.
+- **Maior precisão — OpenAI:** prioriza nomes próprios e vocabulário.
+- **Identificar falantes — OpenAI:** separa os participantes quando possível.
+- **Legendas e tempos — OpenAI:** oferece marcações de tempo mais precisas.
+- **Gemini detalhado:** produz uma transcrição estruturada.
+- **Gemini econômico:** alternativa para maior volume.
 
-Os tempos do Gemini são produzidos pelo próprio modelo e podem exigir revisão. Para
-legendas que precisam de sincronização precisa, prefira **Legendas e tempos**, uma legenda
-existente ou confira o resultado no vídeo.
+A qualidade depende da gravação. Ruído, música alta, pessoas falando ao mesmo tempo,
+microfone distante e nomes incomuns podem exigir revisão.
 
-Modelos, capacidades e disponibilidade podem mudar. Esta lista foi revisada em
-27/07/2026.
+Modelos e disponibilidade podem mudar conforme cada serviço.
 
 ## Chaves da OpenAI e do Gemini
 
-Uma chave de API é uma credencial secreta que permite ao São Francisco conversar
-diretamente com o provedor escolhido. Você não precisa ser desenvolvedor para criar uma.
+Uma chave de API é uma credencial secreta que permite ao São Francisco enviar o áudio ao
+serviço escolhido. Você não precisa ser desenvolvedor para criar uma.
 
 A assinatura de um chatbot e o uso da API são serviços separados. ChatGPT Plus, por
-exemplo, não inclui automaticamente créditos da API OpenAI. Cada provedor administra
-cobrança, cota, projeto e acesso a modelos em sua própria plataforma.
+exemplo, não inclui automaticamente créditos da API OpenAI. Cada serviço administra
+cobrança, limites e acesso aos modelos em sua própria plataforma.
 
-O São Francisco salva a chave no cofre seguro do sistema — macOS Keychain ou Credenciais
-do Windows — e nunca a mostra por inteiro. Em outras plataformas, use uma variável de
-ambiente; o aplicativo não cria um arquivo de texto como alternativa silenciosa.
+O São Francisco guarda a chave no cofre seguro do sistema e nunca volta a exibi-la por
+inteiro.
 
 ### Criar uma chave da OpenAI
 
 1. Abra a [página oficial de chaves da OpenAI](https://platform.openai.com/api-keys).
-2. Entre ou crie uma conta da plataforma de API.
+2. Entre ou crie uma conta.
 3. Crie uma chave para o projeto desejado.
-4. Copie a chave quando ela aparecer; o valor completo pode ser mostrado apenas uma vez.
-5. No São Francisco, abra **Configurações → OpenAI**, cole a chave e escolha
-   **Verificar**.
-6. Quando aparecer **Chave válida**, escolha **Salvar configurações**.
+4. Copie a chave quando ela aparecer.
+5. No São Francisco, abra **Configurações → OpenAI** e cole a chave.
+6. Escolha **Verificar** e, depois, **Salvar configurações**.
 
-Uma chave pode ser válida e ainda não ter saldo, cota ou permissão para determinado
-modelo. Confira o faturamento e os limites no painel da plataforma.
+Uma chave pode ser válida e ainda não ter saldo, limite ou acesso ao modelo escolhido.
+Nesse caso, confira a cobrança e os limites na plataforma da OpenAI.
 
 ### Criar uma chave do Gemini
 
 1. Abra a [página oficial de chaves do Gemini](https://ai.google.dev/gemini-api/docs/api-key).
-2. Entre no Google AI Studio e selecione ou importe um projeto.
-3. Crie a chave conforme as opções disponíveis para o projeto.
-4. No São Francisco, abra **Configurações → Gemini**, cole a chave e escolha
-   **Verificar**.
-5. Quando aparecer **Chave válida**, escolha **Salvar configurações**.
-
-O Google está migrando os tipos de chave da API Gemini. Siga a orientação exibida pelo
-Google AI Studio e mantenha o aplicativo atualizado.
+2. Entre no Google AI Studio.
+3. Escolha um projeto e crie a chave.
+4. No São Francisco, abra **Configurações → Gemini** e cole a chave.
+5. Escolha **Verificar** e, depois, **Salvar configurações**.
 
 > [!WARNING]
 > Nunca envie uma chave em documento, captura de tela, mensagem ou pedido de suporte.
-> Revogue imediatamente qualquer credencial exposta e crie outra.
+> Se uma chave for exposta, revogue-a e crie outra.
 
 ## Como mídias longas são processadas
 
-O aplicativo não envia o vídeo integral ao provedor:
+O São Francisco prepara vídeos longos em etapas menores e reúne tudo em uma única
+transcrição. Isso permite trabalhar com gravações de qualquer duração sem enviar o vídeo
+inteiro de uma vez.
 
-1. Valida a mídia e verifica a faixa de áudio.
-2. Extrai e normaliza o áudio com FFmpeg.
-3. Procura pausas próximas dos pontos de divisão.
-4. Cria partes com margem segura abaixo do limite de upload.
-5. Transcreve e salva o resultado de cada parte.
-6. Reúne os textos, ajusta os tempos e remove repetições nas emendas.
-7. Gera os formatos escolhidos.
+Cada etapa concluída é guardada. Se houver uma interrupção, você poderá continuar pelo
+**Histórico** sem recomeçar todo o trabalho.
 
-Quando não há silêncio adequado, as partes recebem uma pequena sobreposição. Isso reduz o
-risco de cortar uma palavra, mas a montagem ainda deve ser revisada em conteúdo crítico.
-
-O método remove o limite artificial de enviar o arquivo inteiro, mas tempo de
-processamento, espaço em disco, internet, cota do provedor e regras do site continuam
-existindo.
+O tempo necessário depende da duração da gravação, da velocidade da internet e da
+disponibilidade do serviço escolhido.
 
 ## Acompanhar, cancelar e retomar
 
-O andamento usa etapas concretas:
+Durante a transcrição, a tela mostra o andamento e informa qual parte está sendo
+processada.
 
-- **Verificando a fonte e as legendas:** o aplicativo procura uma rota sem API.
-- **Obtendo a mídia:** uma URL está sendo baixada quando isso é necessário.
-- **Medindo a duração e procurando pausas:** FFprobe e FFmpeg analisam a mídia.
-- **Preparando parte X de Y:** o FFmpeg extrai uma parte de áudio normalizada.
-- **Transcrevendo parte X de Y:** a parte está sendo processada pelo provedor.
-- **Montando e exportando:** textos, tempos e arquivos finais estão sendo reunidos.
-- **Concluído:** os resultados estão prontos.
+**Cancelar** interrompe o trabalho assim que for possível. Uma parte que já tenha sido
+aceita pelo serviço pode terminar ou gerar cobrança mesmo depois do cancelamento.
 
-**Cancelar** encerra processos locais assim que possível e conserva as partes concluídas.
-Uma requisição já aceita pelo provedor pode terminar ou gerar consumo mesmo depois do
-cancelamento.
-
-**Retomar** reutiliza partes cujo resultado foi salvo e recomeça na primeira parte
-incompleta. Alterar a fonte, o modelo, o provedor ou o idioma cria uma configuração
-diferente e pode impedir o reaproveitamento.
+**Retomar** continua um trabalho interrompido. Se você trocar o arquivo, o serviço, o
+modelo ou o idioma, será necessário iniciar uma nova transcrição.
 
 ## Formatos de saída
 
 - **TXT:** texto simples, adequado para leitura e pesquisa.
-- **DOCX:** documento formatado, com título, origem e intervalos quando disponíveis.
-- **SRT:** formato comum de legenda para players e editores.
-- **VTT:** formato de legenda usado principalmente na web.
+- **DOCX:** documento formatado, pronto para abrir em editores de texto.
+- **SRT:** legenda para reprodutores e editores de vídeo.
+- **VTT:** legenda usada principalmente em páginas da internet.
 
-SRT e VTT precisam de segmentos com marcações de tempo. Quando o modelo fornece apenas
-texto contínuo, o aplicativo distribui o conteúdo pelo intervalo da parte e marca essa
-estimativa nos metadados. Para trabalho audiovisual preciso, escolha um modelo com tempos
-ou aproveite legendas existentes.
+As marcações de tempo no DOCX e no TXT são opcionais e ficam desativadas por padrão. Para
+incluí-las, marque **Incluir marcações de tempo no DOCX e TXT** antes de iniciar.
 
-O São Francisco não sobrescreve um resultado silenciosamente. Se o nome já existir,
-acrescenta um número ao novo arquivo.
+Arquivos SRT e VTT sempre precisam de tempos para funcionar como legendas. Quando o modelo
+não oferece tempos exatos, o resultado pode precisar de ajustes no editor de vídeo.
+
+Para vídeos da internet, o São Francisco usa o título do vídeo no nome dos arquivos,
+adaptando-o quando necessário. Se já existir um arquivo com o mesmo nome, acrescenta um
+número ao novo resultado.
+
+### Melhorar com IA
+
+Marque **Melhorar com IA** quando quiser receber, além da transcrição original, uma
+segunda versão mais confortável para leitura. O aplicativo organiza parágrafos e corrige
+pontuação, maiúsculas e erros evidentes de reconhecimento.
+
+A melhoria não deve resumir, traduzir, embelezar nem completar trechos duvidosos. Mesmo
+assim, confira especialmente nomes, números e partes pouco claras.
+
+DOCX e TXT recebem arquivos separados, identificados como **transcrição** e **texto
+melhorado**. As marcações de tempo permanecem somente no original. SRT e VTT não são
+reescritos pela etapa de melhoria.
+
+O trabalho segue uma ordem segura: primeiro a transcrição é concluída e guardada; depois
+o texto é melhorado, se você tiver marcado a opção; por último os arquivos são criados.
+Se a melhoria for interrompida, o original fica preservado. Se apenas a criação dos
+arquivos falhar, a retomada não repete as etapas que usam a API.
 
 ## Custos, dados e armazenamento
 
-O aplicativo não cobra pela transcrição. A cobrança, quando houver, é feita diretamente
-pelo provedor da API conforme a conta e o modelo escolhidos.
+O São Francisco não cobra pela transcrição. Quando houver cobrança, ela será feita
+diretamente pela OpenAI ou pelo Google, conforme a sua conta e o modelo escolhido.
 
-Cada tentativa enviada pode gerar consumo. Ao retomar, somente partes sem resultado
-confirmado são reenviadas.
+Cada parte enviada pode gerar consumo. Ao retomar, o aplicativo reaproveita o que já foi
+concluído.
 
-Áudio em partes é enviado ao provedor selecionado. Manifestos, resultados intermediários,
-histórico e arquivos de trabalho permanecem no diretório de dados do São Francisco. Os
-arquivos exportados permanecem na pasta de destino e não são apagados automaticamente.
+Quando houver dados suficientes, o São Francisco mostra um custo aproximado em dólares.
+Valores muito pequenos aparecem como **menos de US$ 0,01**. Se o texto vier integralmente
+de legendas já disponíveis e não houver melhoria, aparece **Sem custo de API**.
 
-Consulte os [termos atuais da OpenAI](https://openai.com/policies).
+O total é apenas uma estimativa. Planos gratuitos, impostos, descontos, tentativas
+interrompidas e mudanças de preço podem fazer o painel do serviço mostrar outro valor.
+Consulte a cobrança oficial no [uso da OpenAI](https://platform.openai.com/usage) ou no
+[faturamento do Google Cloud](https://console.cloud.google.com/billing).
 
-Consulte também os [termos atuais da API Gemini](https://ai.google.dev/gemini-api/terms).
+Quando o serviço informar uma contagem confiável, o aplicativo também pode mostrar o
+total de tokens. Tokens são pequenas unidades usadas para medir a entrada e a resposta.
+O São Francisco não inventa uma contagem quando ela não é fornecida.
+
+### Preços de referência por milhão de tokens
+
+Valores revisados em 28 de julho de 2026. Eles podem mudar; confirme sempre nas páginas
+de [preços da OpenAI](https://developers.openai.com/api/docs/pricing) e de
+[preços do Gemini](https://ai.google.dev/gemini-api/docs/pricing).
+
+| Uso | Entrada | Entrada em cache | Saída |
+| --- | ---: | ---: | ---: |
+| OpenAI — melhorar, volume | US$ 2,50 | US$ 0,25 | US$ 15,00 |
+| OpenAI — melhorar, maior cuidado | US$ 5,00 | US$ 0,50 | US$ 30,00 |
+| Gemini detalhado | US$ 1,50 | — | US$ 7,50 |
+| Gemini econômico | US$ 0,30 | — | US$ 2,50 |
+
+Nos modelos de transcrição da OpenAI que informam tokens, a referência é:
+
+| Uso | Entrada | Saída |
+| --- | ---: | ---: |
+| Transcrição econômica | US$ 1,25 | US$ 5,00 |
+| Transcrição de maior precisão | US$ 2,50 | US$ 10,00 |
+| Transcrição com falantes | US$ 2,50 | US$ 10,00 |
+
+Alguns modelos de transcrição também podem ser estimados por minuto: o econômico da
+OpenAI, cerca de US$ 0,003 por minuto; os demais modelos de transcrição da OpenAI,
+cerca de US$ 0,006 por minuto. Quando o serviço devolve uso detalhado, o aplicativo
+prefere esses dados.
+
+O áudio é enviado ao serviço selecionado. O histórico e os arquivos de trabalho ficam no
+computador. Os resultados permanecem na pasta de destino até que você os apague.
+
+Consulte os [termos da OpenAI](https://openai.com/policies) e os
+[termos da API Gemini](https://ai.google.dev/gemini-api/terms).
 
 ## Problemas comuns
 
 ### A chave não foi aceita
 
-**Sintoma:** Configurações informa que a credencial é inválida.
+**Sintoma:** a tela Configurações informa que a chave é inválida.
 
-**Ação:** confira se a chave pertence ao provedor correto, se foi copiada por inteiro e se
-continua ativa. Depois, verifique projeto, faturamento, cota e acesso ao modelo.
+**O que fazer:** confira se a chave pertence ao serviço correto, se foi copiada por
+inteiro e se continua ativa. Depois, verifique cobrança, limites e acesso ao modelo.
 
 ### O arquivo não tem áudio
 
-**Sintoma:** a preparação termina antes da divisão.
+**Sintoma:** o trabalho termina antes de começar a transcrição.
 
-**Ação:** abra o arquivo em um player e confirme que existe uma faixa de áudio. Arquivos
-corrompidos ou vídeos compostos apenas por imagens não podem ser transcritos.
+**O que fazer:** abra o arquivo e confirme que existe som. Arquivos danificados ou vídeos
+compostos apenas por imagens não podem ser transcritos.
 
-### A URL deixou de funcionar
+### O endereço do vídeo deixou de funcionar
 
-**Sintoma:** o yt-dlp não consegue obter mídia ou legenda.
+**Sintoma:** o aplicativo não consegue obter o vídeo.
 
-**Ação:** atualize o São Francisco e tente novamente. No YouTube, versões atuais do
-yt-dlp também podem precisar do runtime Deno. Conteúdo com login, DRM ou bloqueio do site
-pode continuar indisponível.
+**O que fazer:** atualize o São Francisco e tente novamente. Conteúdo com login,
+pagamento, transmissão ao vivo ou bloqueio do site pode continuar indisponível.
 
 ### O processamento parece parado
 
 **Sintoma:** a mesma parte permanece ativa por vários minutos.
 
-**Ação:** gravações longas e provedores ocupados podem demorar sem que haja falha. Se
-aparecer uma mensagem de rede ou cota, cancele e retome depois; as partes concluídas serão
-preservadas.
+**O que fazer:** gravações longas e serviços ocupados podem demorar. Se aparecer uma
+mensagem de rede ou limite, cancele e retome depois.
 
 ### A legenda ficou fora de sincronia
 
-**Sintoma:** SRT ou VTT antecipa ou atrasa uma fala.
+**Sintoma:** o arquivo SRT ou VTT antecipa ou atrasa uma fala.
 
-**Ação:** prefira uma legenda existente ou o modelo **Legendas e tempos**. Tempos gerados
-pelo Gemini e tempos estimados a partir de texto contínuo devem ser revisados.
+**O que fazer:** use o modelo **Legendas e tempos** e revise o resultado junto ao vídeo.
 
-### Não há espaço em disco
+### Não há espaço no computador
 
-**Sintoma:** a extração ou exportação é interrompida.
+**Sintoma:** o trabalho é interrompido durante a preparação ou a criação dos arquivos.
 
-**Ação:** libere espaço na unidade indicada. O aplicativo precisa conservar o áudio
-normalizado e os resultados intermediários até concluir ou cancelar o trabalho.
+**O que fazer:** libere espaço e tente novamente.
 
 ## Atalhos e navegação
 
-- `⌘N` no macOS ou `Ctrl+N` nas demais plataformas abre **Transcrever**.
+- `⌘N` no macOS ou `Ctrl+N` nos demais sistemas abre **Transcrever**.
 - `⌘K` ou `Ctrl+K` abre a **Ajuda**.
 - `⌘,` no macOS ou `Ctrl+,` abre **Configurações**.
 - `Tab` e `Shift+Tab` movem o foco.
 - `Enter` ou `Espaço` ativa o controle em foco.
-- `Page Up`, `Page Down`, `Home` e `End` percorrem artigos longos da Ajuda.
+- `Page Up`, `Page Down`, `Home` e `End` percorrem textos longos.
+- `Esc` fecha janelas de aviso.
 
 O índice e o artigo da Ajuda possuem rolagem independente.
 
@@ -250,8 +264,5 @@ O índice e o artigo da Ajuda possuem rolagem independente.
 
 O código do São Francisco é distribuído sob a licença MIT.
 
-A interface usa Qt for Python/PySide6 sob os termos aplicáveis da LGPLv3 ou de uma licença
-comercial. FFmpeg, yt-dlp, bibliotecas Python e fontes conservam suas próprias licenças e
-avisos no pacote distribuído.
-
-Versão, autoria, contato e inventário de terceiros ficam na tela **Sobre**.
+Componentes, bibliotecas e fontes conservam suas próprias licenças. Na tela **Sobre**,
+escolha **Ver avisos de terceiros** para ler o inventário dentro do aplicativo.

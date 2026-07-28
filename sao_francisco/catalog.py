@@ -33,6 +33,13 @@ class TranscriptionModel:
         return "Texto contínuo"
 
 
+@dataclass(frozen=True, slots=True)
+class EditorialRoute:
+    provider: ProviderId
+    model_id: str
+    reasoning_effort: str | None = None
+
+
 # Revisado em 27/07/2026 contra a documentação oficial de cada provedor.
 # Os nomes exibidos descrevem a finalidade; o ID técnico permanece disponível
 # nos detalhes e no manifesto de cada trabalho.
@@ -110,3 +117,28 @@ def model_by_id(model_id: str) -> TranscriptionModel:
 
 def models_for_provider(provider: ProviderId) -> tuple[TranscriptionModel, ...]:
     return tuple(option for option in MODEL_CATALOG if option.provider == provider)
+
+
+_OPENAI_EDITORIAL_ROUTES = {
+    "gpt-4o-mini-transcribe": EditorialRoute("openai", "gpt-5.6-terra", "none"),
+    "whisper-1": EditorialRoute("openai", "gpt-5.6-terra", "none"),
+    "gpt-4o-transcribe": EditorialRoute("openai", "gpt-5.6-sol", "low"),
+    "gpt-4o-transcribe-diarize": EditorialRoute("openai", "gpt-5.6-sol", "low"),
+}
+
+
+def editorial_route_for(provider: str, model_id: str) -> EditorialRoute:
+    """Map transcription intent to an internal editorial model."""
+
+    selected = provider.strip().casefold()
+    if selected == "openai":
+        try:
+            return _OPENAI_EDITORIAL_ROUTES[model_id]
+        except KeyError as exc:
+            raise KeyError(f"Modelo OpenAI sem rota editorial: {model_id}") from exc
+    if selected == "gemini" and model_id in {
+        "gemini-3.6-flash",
+        "gemini-3.5-flash-lite",
+    }:
+        return EditorialRoute("gemini", model_id)
+    raise KeyError(f"Modelo sem rota editorial: {model_id}")

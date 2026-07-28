@@ -6,6 +6,7 @@ from contextlib import suppress
 from typing import Any
 
 from sao_francisco.core.cancellation import CancellationToken, OperationCancelled
+from sao_francisco.core.costs import UsageMetrics
 from sao_francisco.core.models import Segment, Transcript
 from sao_francisco.providers.base import ProviderError, ProviderRequest
 
@@ -222,6 +223,14 @@ def _parse_interaction(
             message="O Gemini não reconheceu fala nesta parte.",
             retryable=False,
         )
+    interaction_data = _as_mapping(interaction)
+    usage = _usage_metrics(
+        _as_mapping(
+            interaction_data.get("usage")
+            or interaction_data.get("usage_metadata")
+            or interaction_data.get("usageMetadata")
+        )
+    )
     return Transcript(
         segments=tuple(segments),
         language=str(data.get("language", "")).strip() or None,
@@ -230,8 +239,67 @@ def _parse_interaction(
             "provider": "gemini",
             "model": model_id,
             "timestamps": "model_generated",
+            "usage": usage.to_dict(),
         },
     )
+
+
+def _as_mapping(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return dict(value)
+    dump = getattr(value, "model_dump", None)
+    if callable(dump):
+        dumped = dump()
+        if isinstance(dumped, dict):
+            return dumped
+    result: dict[str, Any] = {}
+    for field in ("usage", "usage_metadata", "usageMetadata", "model"):
+        if hasattr(value, field):
+            result[field] = getattr(value, field)
+    return result
+
+
+def _usage_metrics(value: dict[str, Any]) -> UsageMetrics:
+    return UsageMetrics(
+        input_tokens=_first_int(
+            value,
+            "input_tokens",
+            "inputTokenCount",
+            "prompt_token_count",
+            "promptTokenCount",
+        ),
+        cached_input_tokens=_first_int(
+            value, "cached_input_tokens", "cachedContentTokenCount"
+        ),
+        output_tokens=_first_int(
+            value,
+            "output_tokens",
+            "outputTokenCount",
+            "candidates_token_count",
+            "candidatesTokenCount",
+        ),
+        reasoning_tokens=_first_int(
+            value, "reasoning_tokens", "thoughtsTokenCount", "thought_token_count"
+        ),
+        total_tokens=_first_int(
+            value, "total_tokens", "totalTokenCount", "total_token_count"
+        ),
+        reasoning_in_output=False,
+    )
+
+
+def _first_int(value: dict[str, Any], *names: str) -> int | None:
+    for name in names:
+        raw = value.get(name)
+        if raw is None:
+            continue
+        try:
+            number = int(raw)
+        except (TypeError, ValueError):
+            continue
+        if number >= 0:
+            return number
+    return None
 
 
 def _classify_gemini_error(exc: Exception) -> ProviderError:
