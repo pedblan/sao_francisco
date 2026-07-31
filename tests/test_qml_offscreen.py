@@ -326,8 +326,15 @@ class ProbeBackend(QObject):
                 "providerLabel": "OpenAI",
                 "modelLabel": "Maior precisão",
                 "state": states[index % len(states)],
+                "stage": "improving" if states[index % len(states)] == "failed" else "",
                 "progress": 0.5,
                 "provenance": provenances[index % len(provenances)],
+                "originalReady": states[index % len(states)] == "failed",
+                "improvementState": (
+                    "not_completed"
+                    if states[index % len(states)] == "failed"
+                    else "not_requested"
+                ),
             }
             for index in range(20)
         ]
@@ -563,6 +570,8 @@ def test_transcribe_result_states_render_without_clipping(
             "provenance": "audio_transcription",
             "costLabel": "Custo estimado: cerca de US$ 0,08",
             "usageLabel": "Uso informado: 18.240 tokens",
+            "originalReady": True,
+            "improvementState": "ready",
             "outputGroups": {
                 "improved": [
                     str(tmp_path / "Entrevista — texto melhorado.docx"),
@@ -582,16 +591,22 @@ def test_transcribe_result_states_render_without_clipping(
             "state": "failed",
             "stage": "improving",
             "detail": (
-                "Não foi possível melhorar o texto. A transcrição original está "
-                "preservada e os arquivos finais ainda não foram criados."
+                "Transcrição pronta; a melhoria não foi concluída. "
+                "Você pode retomá-la pelo Histórico."
             ),
-            "progress": 0.78,
+            "progress": 0.65,
             "completedParts": 1,
             "totalParts": 3,
             "provenance": "audio_transcription",
             "costLabel": "Custo estimado: cerca de US$ 0,04",
             "usageLabel": "Uso informado: 9.120 tokens",
-            "outputGroups": {},
+            "originalReady": True,
+            "improvementState": "not_completed",
+            "outputGroups": {
+                "improved": [],
+                "original": [str(tmp_path / "Entrevista — transcrição.txt")],
+                "captions": [str(tmp_path / "Entrevista.srt")],
+            },
         }
 
     backend = ProbeBackend("transcribe", active_job)

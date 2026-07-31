@@ -6,6 +6,7 @@ from sao_francisco.core import CancellationToken, OperationCancelled
 from sao_francisco.providers.base import ProviderRequest
 from sao_francisco.providers.editorial import (
     EDITORIAL_INSTRUCTIONS,
+    EDITORIAL_TIMEOUT_SECONDS,
     EditorialRequest,
     GeminiEditorialProvider,
     OpenAIEditorialProvider,
@@ -318,6 +319,32 @@ def test_openai_editorial_uses_responses_without_tools_or_storage() -> None:
     assert "tools" not in captured
     assert EDITORIAL_INSTRUCTIONS in captured["instructions"]
     assert "<bloco_alvo" in captured["input"]
+
+
+def test_editorial_clients_use_bounded_timeout_without_sdk_retries() -> None:
+    openai_client = OpenAIEditorialProvider("segredo")._client()  # noqa: SLF001
+    try:
+        assert openai_client.timeout == EDITORIAL_TIMEOUT_SECONDS
+        assert openai_client.max_retries == 0
+    finally:
+        openai_client.close()
+
+    gemini_client = GeminiEditorialProvider("segredo")._client()  # noqa: SLF001
+    try:
+        http_options = gemini_client._api_client._http_options  # noqa: SLF001
+        assert http_options.timeout == int(EDITORIAL_TIMEOUT_SECONDS * 1_000)
+        assert http_options.retry_options.attempts == 1
+    finally:
+        gemini_client.close()
+
+
+def test_gemini_transcription_disables_automatic_sdk_retries() -> None:
+    client = GeminiProvider("segredo")._client()  # noqa: SLF001
+    try:
+        retry_options = client._api_client._http_options.retry_options  # noqa: SLF001
+        assert retry_options.attempts == 1
+    finally:
+        client.close()
 
 
 def test_gemini_editorial_uses_same_contract_and_captures_usage() -> None:

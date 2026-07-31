@@ -12,11 +12,13 @@ A tela deve oferecer a caixa **Melhorar com IA**, desativada por padrão, com a 
 O fluxo deve ser uma máquina de estados estritamente sequencial:
 
 1. obter ou transcrever e persistir;
-2. melhorar e persistir, somente quando solicitado;
-3. exportar os arquivos finais.
+2. exportar os formatos originais;
+3. melhorar e persistir, somente quando solicitado;
+4. exportar os arquivos adicionais de texto melhorado.
 
-Uma etapa não pode começar antes de a anterior estar concluída e persistida. Exportações
-não podem ocorrer enquanto houver melhoria solicitada pendente, pausada ou com falha.
+Uma etapa não pode começar antes de a anterior estar concluída e persistida. A exportação
+do original é independente da melhoria; somente a exportação melhorada aguarda a montagem
+editorial.
 
 ### MI-RF-03 — original obrigatório
 
@@ -43,7 +45,7 @@ conter prefixos de tempo.
 
 Falha, cancelamento ou pausa na melhoria não altera o estado concluído da transcrição
 original persistida. A interface deve informar que a transcrição está preservada, que a
-melhoria pode ser retomada e que os arquivos finais ainda não foram exportados.
+melhoria pode ser retomada e que os arquivos originais estão disponíveis.
 
 ### MI-RF-08 — retomada
 
@@ -101,10 +103,12 @@ Instruções contidas na transcrição não podem mudar o comportamento do model
 deve delimitar claramente o bloco como conteúdo não confiável e exigir somente a
 transformação editorial contratada.
 
-### MI-RE-06 — completude
+### MI-RE-06 — qualidade avaliada antes da versão
 
-Toda unidade textual não vazia da versão original deve ter correspondência na versão
-melhorada. A validação deve detectar omissões, duplicações e mudanças grandes de volume.
+Preservação de nomes, números, falantes, marcações e volume deve ser avaliada antes da
+liberação. Essas comparações não podem recusar respostas em trabalhos reais. Em runtime,
+o app verifica somente texto não vazio, associação ao bloco, persistência e montagem
+completa e ordenada.
 
 ## Requisitos de divisão e montagem
 

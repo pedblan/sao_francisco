@@ -29,6 +29,9 @@ Inventário editorial para revisar a linguagem sem precisar procurar nos arquivo
 - Aviso: `O valor aproximado aparecerá durante o trabalho. A cobrança oficial fica na
   conta do serviço escolhido.`
 - Ação principal: `Iniciar transcrição`
+- Estados do trabalho: `Cancelando`, `Transcrição pronta · Melhorando texto`,
+  `Transcrição pronta · Melhoria não concluída`, `Transcrição e texto melhorado prontos`
+- Cancelamento: `Cancelando; preservando a transcrição e as partes concluídas…`
 
 ## Histórico
 

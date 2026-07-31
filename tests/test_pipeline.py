@@ -11,6 +11,7 @@ import pytest
 
 from sao_francisco.core import (
     CancellationToken,
+    ChunkSpec,
     EditorialValidationError,
     JobStatus,
     JobStore,
@@ -478,10 +479,23 @@ def test_improvement_is_persisted_before_grouped_final_export(tmp_path) -> None:
     media_file = tmp_path / "reuniao.wav"
     media_file.write_bytes(b"fake media")
     transcriber = FakeProvider()
-    editor = FakeEditorialProvider()
     progress = []
+    store = JobStore(tmp_path / "jobs")
+
+    class InspectingEditorialProvider(FakeEditorialProvider):
+        original_was_ready = False
+
+        def improve(self, request, cancellation):
+            manifest = pipeline.list_jobs()[0]
+            original_paths = manifest.metadata["output_groups"]["original"]
+            assert manifest.metadata["original_ready"] is True
+            assert all(Path(path).is_file() for path in original_paths)
+            self.original_was_ready = True
+            return super().improve(request, cancellation)
+
+    editor = InspectingEditorialProvider()
     pipeline = TranscriptionPipeline(
-        JobStore(tmp_path / "jobs"),
+        store,
         media=FakeMediaProcessor(tmp_path / "work", duration=4),
         secret_reader=lambda _provider: "test-key",
         provider_factory=lambda _provider, _secret: transcriber,
@@ -498,6 +512,7 @@ def test_improvement_is_persisted_before_grouped_final_export(tmp_path) -> None:
 
     assert len(transcriber.requests) == 1
     assert len(editor.requests) == 1
+    assert editor.original_was_ready
     assert result.manifest.metadata["pipeline_stage"] == "completed"
     assert pipeline.job_store.has_original_result(result.manifest.job_id)
     assert pipeline.job_store.has_improved_result(result.manifest.job_id)
@@ -521,7 +536,7 @@ def test_improvement_is_persisted_before_grouped_final_export(tmp_path) -> None:
     assert int(summary["reported_tokens"]) == 180
 
 
-def test_editorial_failure_preserves_original_and_exports_nothing(tmp_path) -> None:
+def test_editorial_failure_preserves_and_exports_original(tmp_path) -> None:
     media_file = tmp_path / "longa.wav"
     media_file.write_bytes(b"fake media")
 
@@ -554,7 +569,12 @@ def test_editorial_failure_preserves_original_and_exports_nothing(tmp_path) -> N
     assert failed.metadata["pipeline_stage"] == "improving"
     assert store.has_original_result(failed.job_id)
     assert not store.has_improved_result(failed.job_id)
-    assert not (tmp_path / "out").exists()
+    original_outputs = failed.metadata["output_groups"]["original"]
+    assert [Path(path).name for path in original_outputs] == [
+        "longa — transcrição.txt"
+    ]
+    assert all(Path(path).is_file() for path in original_outputs)
+    assert failed.metadata["original_ready"] is True
     assert len(store.load_editorial_results(failed.job_id)) == 1
 
     resumed_editor = FakeEditorialProvider()
@@ -573,7 +593,84 @@ def test_editorial_failure_preserves_original_and_exports_nothing(tmp_path) -> N
     assert resumed.outputs
 
 
-def test_rejected_editorial_response_keeps_its_reported_cost(tmp_path) -> None:
+def test_empty_editorial_response_is_not_reported_as_a_file_error(tmp_path) -> None:
+    media_file = tmp_path / "vazia.wav"
+    media_file.write_bytes(b"fake media")
+
+    class EmptyEditorialProvider(FakeEditorialProvider):
+        def improve(self, request, cancellation):
+            response = super().improve(request, cancellation)
+            return replace(response, text=" \n ")
+
+    progress = []
+    pipeline = TranscriptionPipeline(
+        JobStore(tmp_path / "jobs"),
+        media=FakeMediaProcessor(tmp_path / "work", duration=4),
+        secret_reader=lambda _provider: "test-key",
+        provider_factory=lambda _provider, _secret: FakeProvider(),
+        editorial_provider_factory=lambda _provider, _secret: EmptyEditorialProvider(),
+        target_chunk_duration=10,
+        minimum_chunk_duration=2,
+    )
+
+    with pytest.raises(EditorialValidationError):
+        pipeline.run(
+            media_file,
+            improved_options(tmp_path / "out", "txt"),
+            progress=progress.append,
+        )
+
+    failed = pipeline.list_jobs()[0]
+    public_message = str(failed.metadata["status_message"])
+    assert "arquivo" not in public_message.casefold()
+    assert "original" in public_message.casefold()
+    assert "arquivo" not in progress[-1].detail.casefold()
+    assert failed.metadata["original_ready"] is True
+
+
+def test_editorial_cancellation_marks_attempt_ambiguous_and_keeps_original(
+    tmp_path,
+) -> None:
+    media_file = tmp_path / "cancelada.wav"
+    media_file.write_bytes(b"fake media")
+
+    class CancellingEditorialProvider(FakeEditorialProvider):
+        def improve(self, request, cancellation):
+            self.requests.append(request)
+            cancellation.cancel()
+            cancellation.raise_if_cancelled()
+            raise AssertionError("cancelamento não foi observado")
+
+    editor = CancellingEditorialProvider()
+    pipeline = TranscriptionPipeline(
+        JobStore(tmp_path / "jobs"),
+        media=FakeMediaProcessor(tmp_path / "work", duration=4),
+        secret_reader=lambda _provider: "test-key",
+        provider_factory=lambda _provider, _secret: FakeProvider(),
+        editorial_provider_factory=lambda _provider, _secret: editor,
+        target_chunk_duration=10,
+        minimum_chunk_duration=2,
+    )
+
+    with pytest.raises(OperationCancelled):
+        pipeline.run(media_file, improved_options(tmp_path / "out", "txt"))
+
+    cancelled = pipeline.list_jobs()[0]
+    attempts = cancelled.metadata["attempts"]
+    assert [attempt["status"] for attempt in attempts] == [
+        "accepted",
+        "remote_ambiguous",
+    ]
+    assert cancelled.metadata["remote_result_ambiguous"] is True
+    assert cancelled.metadata["original_ready"] is True
+    assert all(
+        Path(path).is_file()
+        for path in cancelled.metadata["output_groups"]["original"]
+    )
+    assert len(editor.requests) == 1
+
+
+def test_semantic_differences_are_accepted_without_runtime_rejection(tmp_path) -> None:
     media_file = tmp_path / "entrevista.wav"
     media_file.write_bytes(b"fake media")
 
@@ -593,25 +690,99 @@ def test_rejected_editorial_response_keeps_its_reported_cost(tmp_path) -> None:
         minimum_chunk_duration=2,
     )
 
-    with pytest.raises(EditorialValidationError, match="números"):
-        pipeline.run(media_file, improved_options(tmp_path / "out", "txt"))
+    result = pipeline.run(media_file, improved_options(tmp_path / "out", "txt"))
 
-    failed = pipeline.list_jobs()[0]
-    assert failed.metadata["cost_summary"]["reported_tokens"] == 180
-    assert len(failed.metadata["cost_adjustments"]) == 1
+    assert result.manifest.status == JobStatus.COMPLETED
+    assert result.improved_text is not None
+    assert result.improved_text.endswith("28")
+    assert result.manifest.metadata["cost_summary"]["reported_tokens"] == 180
+    assert "cost_adjustments" not in result.manifest.metadata
+    attempts = result.manifest.metadata["attempts"]
+    assert [attempt["status"] for attempt in attempts] == [
+        "accepted",
+        "accepted",
+    ]
 
-    resumed = TranscriptionPipeline(
+
+def test_interruption_reconciles_saved_result_before_marking_attempt_ambiguous(
+    tmp_path,
+) -> None:
+    media_file = tmp_path / "conciliada.wav"
+    media_file.write_bytes(b"fake media")
+    store = JobStore(tmp_path / "jobs")
+    pipeline = TranscriptionPipeline(
         store,
-        media=FakeMediaProcessor(tmp_path / "resume-work", duration=4),
+        media=FakeMediaProcessor(tmp_path / "work", duration=4),
         secret_reader=lambda _provider: "test-key",
-        provider_factory=lambda *_args: pytest.fail("audio must not be retranscribed"),
+        provider_factory=lambda _provider, _secret: FakeProvider(),
         editorial_provider_factory=lambda _provider, _secret: FakeEditorialProvider(),
         target_chunk_duration=10,
         minimum_chunk_duration=2,
-    ).resume(failed.job_id)
+    )
+    result = pipeline.run(
+        media_file,
+        improved_options(tmp_path / "out", "txt"),
+    )
+    attempts = [dict(item) for item in result.manifest.metadata["attempts"]]
+    editorial_attempt = next(
+        item for item in attempts if item["stage"] == "improvement"
+    )
+    editorial_attempt.update(status="running", finished_at=None)
+    metadata = {
+        **dict(result.manifest.metadata),
+        "pipeline_stage": "improving",
+        "attempts": attempts,
+        "active_attempt_id": editorial_attempt["attempt_id"],
+    }
+    interrupted = store.save_job(
+        replace(result.manifest, status=JobStatus.RUNNING, metadata=metadata)
+    )
 
-    assert resumed.manifest.metadata["cost_summary"]["reported_tokens"] == 360
-    assert resumed.outputs
+    paused = pipeline.mark_interrupted(interrupted.job_id)
+
+    reconciled = next(
+        item
+        for item in paused.metadata["attempts"]
+        if item["attempt_id"] == editorial_attempt["attempt_id"]
+    )
+    assert reconciled["status"] == "accepted"
+    assert reconciled["remote_result_ambiguous"] is False
+    assert paused.status == JobStatus.PAUSED
+    assert paused.metadata.get("remote_result_ambiguous") is not True
+
+
+def test_forced_cancel_persists_request_before_marking_remote_ambiguous(
+    tmp_path,
+) -> None:
+    store = JobStore(tmp_path / "jobs")
+    pipeline = TranscriptionPipeline(store)
+    manifest = store.create_job(
+        source="https://example.test/video",
+        chunks=(ChunkSpec(0, 0, 5),),
+        provider="openai",
+        model="gpt-4o-mini-transcribe",
+        settings={"formats": ["txt"], "improve_with_ai": False},
+    )
+    manifest = store.set_status(manifest.job_id, JobStatus.RUNNING)
+    manifest, _attempt_id = pipeline._start_remote_attempt(  # noqa: SLF001
+        manifest,
+        stage="transcription",
+        unit_id="chunk-0",
+        provider="openai",
+        model="gpt-4o-mini-transcribe",
+    )
+
+    requested = pipeline.request_cancel(manifest.job_id)
+
+    assert requested.metadata["cancellation_state"] == "cancel_requested"
+    assert requested.metadata["attempts"][0]["status"] == "cancel_requested"
+
+    cancelled = pipeline.mark_stalled_cancelled(manifest.job_id)
+
+    assert cancelled.status == JobStatus.CANCELLED
+    assert cancelled.metadata["cancellation_state"] == "cancelled"
+    assert cancelled.metadata["attempts"][0]["status"] == "remote_ambiguous"
+    assert cancelled.metadata["remote_result_ambiguous"] is True
 
 
 def test_export_retry_does_not_repeat_paid_stages(
@@ -630,21 +801,26 @@ def test_export_retry_does_not_repeat_paid_stages(
         target_chunk_duration=10,
         minimum_chunk_duration=2,
     )
-    real_export = pipeline._export_all  # noqa: SLF001
+    real_export = pipeline._export_improved  # noqa: SLF001
 
     def fail_export(*_args, **_kwargs):
         raise OSError("falha simulada")
 
-    monkeypatch.setattr(pipeline, "_export_all", fail_export)
+    monkeypatch.setattr(pipeline, "_export_improved", fail_export)
     with pytest.raises(OSError):
         pipeline.run(media_file, improved_options(tmp_path / "out", "txt"))
 
     failed = pipeline.list_jobs()[0]
     before = dict(failed.metadata["cost_summary"])
-    assert failed.metadata["pipeline_stage"] == "export_failed"
+    assert failed.metadata["pipeline_stage"] == "improved_export_failed"
+    assert failed.metadata["original_ready"] is True
+    assert all(
+        Path(path).is_file()
+        for path in failed.metadata["output_groups"]["original"]
+    )
     assert len(transcriber.requests) == len(editor.requests) == 1
 
-    monkeypatch.setattr(pipeline, "_export_all", real_export)
+    monkeypatch.setattr(pipeline, "_export_improved", real_export)
     result = pipeline.resume(failed.job_id)
 
     assert result.manifest.status == JobStatus.COMPLETED

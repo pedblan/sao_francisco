@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sao-francisco"
-version = "0.1.1"
+version = "0.1.2"
 description = "Aplicativo Qt 6 para transcrever mídias longas com retomada segura."
 readme = "README.md"
 requires-python = ">=3.11,<3.14"

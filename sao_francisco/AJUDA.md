@@ -112,11 +112,14 @@ disponibilidade do serviço escolhido.
 Durante a transcrição, a tela mostra o andamento e informa qual parte está sendo
 processada.
 
-**Cancelar** interrompe o trabalho assim que for possível. Uma parte que já tenha sido
-aceita pelo serviço pode terminar ou gerar cobrança mesmo depois do cancelamento.
+**Cancelar** muda o cartão para **Cancelando** e encerra a execução em até cerca de cinco
+segundos. Partes e arquivos já concluídos permanecem disponíveis. Uma chamada que já
+tenha chegado ao serviço pode terminar ou gerar cobrança mesmo depois do cancelamento.
 
 **Retomar** continua um trabalho interrompido. Se você trocar o arquivo, o serviço, o
-modelo ou o idioma, será necessário iniciar uma nova transcrição.
+modelo ou o idioma, será necessário iniciar uma nova transcrição. Quando o resultado de
+uma chamada anterior for incerto, o aplicativo avisa antes de permitir uma nova chamada,
+pois ela pode gerar outra cobrança.
 
 ## Formatos de saída
 
@@ -148,10 +151,11 @@ DOCX e TXT recebem arquivos separados, identificados como **transcrição** e **
 melhorado**. As marcações de tempo permanecem somente no original. SRT e VTT não são
 reescritos pela etapa de melhoria.
 
-O trabalho segue uma ordem segura: primeiro a transcrição é concluída e guardada; depois
-o texto é melhorado, se você tiver marcado a opção; por último os arquivos são criados.
-Se a melhoria for interrompida, o original fica preservado. Se apenas a criação dos
-arquivos falhar, a retomada não repete as etapas que usam a API.
+O trabalho segue uma ordem segura: primeiro a transcrição é concluída, guardada e
+exportada; depois o texto é melhorado, se você tiver marcado a opção; por último são
+criados os arquivos adicionais de texto melhorado. Se a melhoria for interrompida, os
+arquivos originais continuam disponíveis. A retomada reaproveita etapas aceitas e não
+repete automaticamente uma chamada cujo resultado ficou incerto.
 
 ## Custos, dados e armazenamento
 

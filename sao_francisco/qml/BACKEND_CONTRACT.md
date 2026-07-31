@@ -78,11 +78,14 @@ improveWithAi: bool (padrão `false`; exige DOCX ou TXT)
 ```text
 id, title/sourceName, state, stage, detail, progress (0..1),
 completedParts, totalParts, provenance, costLabel, usageLabel,
-outputPaths, outputGroups
+outputPaths, outputGroups, originalReady, improvementState,
+remoteResultAmbiguous
 ```
 
 `state` é um de `queued`, `preparing`, `running`, `paused`, `completed`,
-`failed`, `cancelled`. Novos trabalhos usam `audio_transcription`. Valores antigos de
+`failed`, `cancelling`, `cancelled`. `cancelling` é o estado transitório da interface
+enquanto o processo recebe até cinco segundos para encerrar. Novos trabalhos usam
+`audio_transcription`. Valores antigos de
 `provenance` continuam aceitos para que o Histórico possa exibir trabalhos criados por
 versões anteriores:
 
@@ -92,8 +95,11 @@ versões anteriores:
 - `audio_transcription` → **Áudio transcrito**
 
 `stage` registra o checkpoint sequencial, entre eles `transcription_complete`,
-`improving`, `improvement_complete`, `exporting`, `export_failed` e `completed`.
+`exporting_original`, `original_exported`, `improving`, `improvement_complete`,
+`exporting_improved`, `improvement_exported` e `completed`.
 `outputGroups` separa listas de caminhos em `improved`, `original` e `captions`.
+`originalReady` permite oferecer o original antes do fim da melhoria;
+`improvementState` é `not_requested`, `in_progress`, `not_completed` ou `ready`.
 Custos chegam ao QML já formatados; preços unitários e fórmulas não fazem parte do
 contrato visual.
 

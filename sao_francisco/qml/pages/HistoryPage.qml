@@ -59,10 +59,23 @@ Item {
         filteredItems = matches
     }
 
-    function stateLabel(value, stage) {
-        if (value === "running" && stage === "improving")
-            return "Melhorando o texto"
-        if (value === "running" && stage === "exporting")
+    function stateLabel(item) {
+        const value = String(item.state || "")
+        const stage = String(item.stage || "")
+        if (Boolean(item.originalReady)
+                && String(item.improvementState || "") === "in_progress")
+            return "Transcrição pronta · Melhorando texto"
+        if (Boolean(item.originalReady)
+                && String(item.improvementState || "") === "not_completed"
+                && (value === "failed" || value === "cancelled"
+                    || value === "paused"))
+            return "Transcrição pronta · Melhoria não concluída"
+        if (Boolean(item.originalReady)
+                && String(item.improvementState || "") === "ready")
+            return "Transcrição e texto melhorado prontos"
+        if (value === "running"
+                && (stage === "exporting_original"
+                    || stage === "exporting_improved"))
             return "Criando arquivos"
         if (value === "failed" && stage === "improving")
             return "Melhoria interrompida"
@@ -315,9 +328,7 @@ Item {
                                 Layout.fillWidth: true
                                 spacing: 7
                                 Components.StatusPill {
-                                    text: root.stateLabel(String(
-                                              historyCard.modelData.state || ""),
-                                              String(historyCard.modelData.stage || ""))
+                                    text: root.stateLabel(historyCard.modelData)
                                     tone: root.stateTone(String(
                                               historyCard.modelData.state || ""))
                                 }
@@ -356,7 +367,9 @@ Item {
                         ColumnLayout {
                             spacing: 7
                             Components.AppButton {
-                                visible: historyCard.modelData.state === "completed"
+                                visible: String(historyCard.modelData.primaryOutput
+                                                || "").length > 0
+                                         || historyCard.modelData.state === "completed"
                                 text: "Abrir"
                                 compact: true
                                 onClicked: root.callBackend(

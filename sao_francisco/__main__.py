@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+from multiprocessing import freeze_support
 
 
 def main() -> int:
@@ -14,10 +15,16 @@ def main() -> int:
         result = ytdlp_main(sys.argv[2:])
         return int(result or 0)
 
+    if len(sys.argv) > 1 and sys.argv[1] == "--process-smoke-test":
+        from sao_francisco.process_smoke import run_process_smoke_test
+
+        return run_process_smoke_test()
+
     from sao_francisco.app import main as app_main
 
     return app_main()
 
 
 if __name__ == "__main__":
+    freeze_support()
     raise SystemExit(main())

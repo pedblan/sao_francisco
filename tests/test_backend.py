@@ -6,6 +6,7 @@ import os
 import threading
 import time
 from dataclasses import replace
+from multiprocessing import get_context
 from pathlib import Path
 from typing import Any
 
@@ -33,7 +34,10 @@ from sao_francisco.pipeline import (
     PipelineOptions,
     PipelineProgress,
     PipelineResult,
+    TranscriptionPipeline,
 )
+from sao_francisco.process_worker import PipelineProcessConfig
+from tests_process_support import disposable_executor_probe
 
 
 class FakePipeline:
@@ -306,10 +310,175 @@ def test_cancellation_is_cooperative_and_leaves_the_ui_resumable(
     instance.startTranscription(submission(source))
     wait_until(application, pipeline.started.is_set)
     instance.cancelTranscription()
+    assert instance.activeJobState == "cancelling"
+    assert "cancelando" in instance.activeJob["detail"].casefold()
     wait_until(application, lambda: not instance.busy)
 
     assert instance.activeJobState == "cancelled"
     assert "retomar" in instance.activeJob["detail"].casefold()
+
+
+def test_disposable_process_forces_cancel_and_accepts_the_next_task(
+    application: QApplication,
+    tmp_path: Path,
+) -> None:
+    assert backend_module._CANCEL_GRACE_MS == 5_000  # noqa: SLF001
+    executor = backend_module._ProcessExecutor(  # noqa: SLF001
+        PipelineProcessConfig(
+            job_root=tmp_path / "jobs",
+            media_work_root=tmp_path / "media",
+            default_output_root=tmp_path / "outputs",
+        ),
+        context=get_context("spawn"),
+        target=disposable_executor_probe,
+        cancel_grace_ms=50,
+    )
+    forced: list[tuple[str, str]] = []
+    succeeded: list[tuple[str, str]] = []
+    executor.forcedCancelled.connect(
+        lambda key, job_id: forced.append((key, job_id))
+    )
+    executor.succeeded.connect(
+        lambda key, job_id: succeeded.append((key, job_id))
+    )
+
+    started_at = time.monotonic()
+    executor.start(
+        backend_module._QueuedTask(  # noqa: SLF001
+            key="stuck-key",
+            source="stuck",
+            title="Travada",
+        )
+    )
+    assert executor.cancel()
+    wait_until(application, lambda: bool(forced), timeout_ms=2_000)
+
+    assert forced == [("stuck-key", "")]
+    assert not executor.running
+    assert time.monotonic() - started_at < 1.5
+
+    executor.start(
+        backend_module._QueuedTask(  # noqa: SLF001
+            key="next-key",
+            source="next",
+            title="Seguinte",
+        )
+    )
+    wait_until(application, lambda: bool(succeeded), timeout_ms=3_000)
+
+    assert succeeded == [("next-key", "probe-result")]
+    assert not executor.running
+    executor.shutdown()
+
+
+def test_real_process_entry_point_starts_without_network(
+    application: QApplication,
+    tmp_path: Path,
+) -> None:
+    executor = backend_module._ProcessExecutor(  # noqa: SLF001
+        PipelineProcessConfig(
+            job_root=tmp_path / "jobs",
+            media_work_root=tmp_path / "media",
+            default_output_root=tmp_path / "outputs",
+        ),
+        context=get_context("spawn"),
+    )
+    failures: list[tuple[str, str]] = []
+    executor.failed.connect(
+        lambda key, message: failures.append((key, message))
+    )
+    executor.start(
+        backend_module._QueuedTask(  # noqa: SLF001
+            key="source-probe",
+            source=str(tmp_path / "inexistente.wav"),
+            title="Inexistente",
+            options=PipelineOptions(
+                provider="openai",
+                model="gpt-4o-mini-transcribe",
+                formats=("txt",),
+                output_folder=tmp_path / "outputs",
+            ),
+        )
+    )
+
+    wait_until(application, lambda: bool(failures), timeout_ms=5_000)
+
+    assert failures[0][0] == "source-probe"
+    assert "não existe" in failures[0][1]
+    assert not executor.running
+    executor.shutdown()
+
+
+def test_running_legacy_improvement_is_paused_without_auto_retry(
+    application: QApplication,
+    tmp_path: Path,
+) -> None:
+    store = JobStore(tmp_path / "jobs")
+    running = store.create_job(
+        source="https://example.test/running",
+        chunks=(ChunkSpec(0, 0, 2),),
+        provider="openai",
+        model="gpt-4o-mini-transcribe",
+        settings={"formats": ["txt"], "improve_with_ai": True},
+        metadata={"pipeline_stage": "improving"},
+    )
+    running = store.set_status(running.job_id, JobStatus.RUNNING)
+    settings = QSettings(
+        str(tmp_path / "recovery-settings.ini"),
+        QSettings.Format.IniFormat,
+    )
+    settings.setValue("preferences/resumeInterruptedJobs", True)
+    instance = AppBackend(
+        pipeline=TranscriptionPipeline(store),
+        qsettings=settings,
+    )
+    try:
+        application.processEvents()
+        recovered_running = store.load_job(running.job_id)
+        assert recovered_running.status == JobStatus.PAUSED
+        assert recovered_running.metadata["remote_result_ambiguous"] is True
+        assert not instance.busy
+    finally:
+        assert instance.shutdown()
+        application.processEvents()
+
+
+def test_ambiguous_retry_requires_a_second_explicit_action(
+    backend,
+    application: QApplication,
+    tmp_path: Path,
+) -> None:
+    instance, pipeline = backend
+    source = tmp_path / "ambigua.wav"
+    source.write_bytes(b"media")
+    manifest = pipeline.job_store.create_job(
+        source=str(source),
+        chunks=(ChunkSpec(0, 0, 2),),
+        provider="openai",
+        model="gpt-4o-mini-transcribe",
+        settings={"formats": ["txt"], "improve_with_ai": True},
+        metadata={
+            "source_name": source.name,
+            "pipeline_stage": "improving",
+            "remote_result_ambiguous": True,
+        },
+    )
+    pipeline.job_store.set_status(manifest.job_id, JobStatus.CANCELLED)
+    pipeline.block = True
+    messages: list[str] = []
+    instance.toastRequested.connect(messages.append)
+
+    instance.resumeTranscription(manifest.job_id)
+
+    assert not pipeline.started.is_set()
+    assert not instance.busy
+    assert any("cobrada" in message.casefold() for message in messages)
+
+    instance.resumeTranscription(manifest.job_id)
+    wait_until(application, pipeline.started.is_set)
+    assert instance.busy
+    pipeline.release.set()
+    wait_until(application, lambda: not instance.busy)
 
 
 def test_shutdown_never_leaves_an_uncooperative_qthread_running(

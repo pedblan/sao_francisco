@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import re
-from collections import Counter
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any
@@ -14,8 +13,6 @@ from .models import Transcript
 EDITORIAL_CONTRACT_VERSION = "1"
 DEFAULT_EDITORIAL_BLOCK_CHARS = 12_000
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?…])\s+")
-_NUMBER_RE = re.compile(r"(?<!\w)[+-]?\d+(?:[.,:/-]\d+)*%?(?!\w)")
-_MARKER_RE = re.compile(r"\[(?:inaudível|ininteligível|trecho inaudível)[^\]]*\]", re.I)
 
 
 class EditorialValidationError(ValueError):
@@ -113,45 +110,23 @@ def validate_editorial_result(
     *,
     protected_speakers: Iterable[str] = (),
 ) -> str:
+    """Validate only that a provider returned usable text.
+
+    The original transcript is the canonical result and remains available next
+    to the optional improved version.  Runtime comparisons of numbers,
+    speakers, markers, or relative length produced false rejections while
+    claiming a degree of semantic certainty the application cannot provide.
+
+    ``original`` and ``protected_speakers`` remain in the signature so saved
+    jobs and integrations written against the first editorial contract keep
+    working.
+    """
+
+    del original, protected_speakers
     candidate = improved.replace("\r\n", "\n").replace("\r", "\n").strip()
     if not candidate:
         raise EditorialValidationError("A melhoria devolveu um bloco vazio.")
-
-    original_length = max(1, len(original.strip()))
-    ratio = len(candidate) / original_length
-    if ratio < 0.55 or ratio > 1.75:
-        raise EditorialValidationError(
-            "A melhoria alterou demais o tamanho do texto e foi preservada para revisão."
-        )
-
-    if Counter(_NUMBER_RE.findall(original)) != Counter(_NUMBER_RE.findall(candidate)):
-        raise EditorialValidationError(
-            "A melhoria alterou números do texto e não foi aceita."
-        )
-    if Counter(item.casefold() for item in _MARKER_RE.findall(original)) != Counter(
-        item.casefold() for item in _MARKER_RE.findall(candidate)
-    ):
-        raise EditorialValidationError(
-            "A melhoria alterou uma indicação de trecho inaudível e não foi aceita."
-        )
-    speakers = tuple(
-        dict.fromkeys(item.strip() for item in protected_speakers if item.strip())
-    )
-    if speakers and _speaker_counts(original, speakers) != _speaker_counts(
-        candidate, speakers
-    ):
-        raise EditorialValidationError(
-            "A melhoria alterou os falantes e não foi aceita."
-        )
     return candidate
-
-
-def _speaker_counts(text: str, speakers: Iterable[str]) -> Counter[str]:
-    counts: Counter[str] = Counter()
-    for speaker in speakers:
-        pattern = re.compile(rf"(?mi)^{re.escape(speaker)}:(?=\s)")
-        counts[speaker.casefold()] = len(pattern.findall(text))
-    return counts
 
 
 def assemble_editorial_results(
