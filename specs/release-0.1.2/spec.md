@@ -1,6 +1,6 @@
 # Especificação — release 0.1.2
 
-**Estado:** implementada em código-fonte; pacotes e publicação pendentes
+**Estado:** publicada e verificada em 31 de julho de 2026
 **Versão:** `0.1.2`
 **Tag:** `v0.1.2`
 **Repositório:** `pedblan/sao_francisco`
