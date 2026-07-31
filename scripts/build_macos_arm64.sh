@@ -94,6 +94,7 @@ fi
 codesign --verify --deep --strict --verbose=1 "$built_app"
 
 "$built_app/Contents/MacOS/sao-francisco" --smoke-test
+"$built_app/Contents/MacOS/sao-francisco" --process-smoke-test
 "$built_app/Contents/MacOS/sao-francisco" --yt-dlp --version >/dev/null
 
 mkdir -p "$dmg_root"

@@ -2,8 +2,8 @@
 
 The core package deliberately has no opinion about GUI state or providers.  This
 module joins those pieces while remaining synchronous and Qt-free: callers run a
-pipeline in a worker thread, receive progress snapshots, and can cancel through
-the shared :class:`~sao_francisco.core.CancellationToken`.
+pipeline behind a worker boundary, receive progress snapshots, and can cancel
+through the shared :class:`~sao_francisco.core.CancellationToken`.
 """
 
 from __future__ import annotations
@@ -13,6 +13,7 @@ import re
 import tempfile
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlparse
@@ -245,9 +246,9 @@ class PipelineResult:
 class TranscriptionPipeline:
     """Run and resume one source at a time.
 
-    The class is thread-compatible, not internally concurrent.  A backend may
-    queue calls onto one worker thread while the :class:`JobStore` keeps each
-    completed provider response crash-safe.
+    The class is safe to invoke in a worker thread or disposable process, but is
+    not internally concurrent.  The :class:`JobStore` keeps every completed
+    provider response crash-safe.
     """
 
     def __init__(
@@ -455,9 +456,8 @@ class TranscriptionPipeline:
                 )
         except OperationCancelled:
             if manifest is not None:
-                manifest = self.job_store.set_status(
-                    manifest.job_id,
-                    JobStatus.CANCELLED,
+                manifest = self._mark_cancelled(
+                    manifest,
                     message="Cancelada; as partes concluídas foram preservadas.",
                 )
                 self._report_manifest(
@@ -564,9 +564,8 @@ class TranscriptionPipeline:
                     progress,
                 )
         except OperationCancelled:
-            manifest = self.job_store.set_status(
-                job_id,
-                JobStatus.CANCELLED,
+            manifest = self._mark_cancelled(
+                manifest,
                 message="Cancelada; as partes concluídas foram preservadas.",
             )
             self._report_manifest(
@@ -603,6 +602,39 @@ class TranscriptionPipeline:
                 continue
         return tuple(
             sorted(jobs, key=lambda item: (item.updated_at, item.created_at), reverse=True)
+        )
+
+    def load_result(self, job_id: str) -> PipelineResult:
+        """Rebuild a completed result from durable job artifacts."""
+
+        manifest = self.job_store.load_job(job_id)
+        transcript = self.job_store.load_original_result(job_id)
+        groups = _saved_output_groups(manifest)
+        outputs = _flatten_output_groups(groups)
+        if not outputs:
+            outputs = tuple(
+                Path(str(path))
+                for path in manifest.metadata.get("output_paths", ())
+            )
+            groups = {
+                "improved": (),
+                "original": outputs,
+                "captions": (),
+            }
+        improved_text = (
+            self.job_store.load_improved_result(job_id)
+            if self.job_store.has_improved_result(job_id)
+            else None
+        )
+        return PipelineResult(
+            manifest=manifest,
+            transcript=transcript,
+            outputs=outputs,
+            provenance=str(
+                manifest.metadata.get("provenance") or "audio_transcription"
+            ),
+            improved_text=improved_text,
+            output_groups=groups,
         )
 
     def _create_manifest(
@@ -674,7 +706,7 @@ class TranscriptionPipeline:
                     source_name=source_name,
                     state="preparing",
                     detail=f"Preparando parte {chunk.index + 1} de {len(manifest.chunks)}…",
-                    progress=manifest.progress,
+                    progress=overall_progress(manifest),
                     completed_parts=completed,
                     total_parts=len(manifest.chunks),
                     provenance="audio_transcription",
@@ -697,23 +729,48 @@ class TranscriptionPipeline:
                         detail=(
                             f"Transcrevendo parte {chunk.index + 1} de {len(manifest.chunks)}…"
                         ),
-                        progress=manifest.progress,
+                        progress=overall_progress(manifest),
                         completed_parts=completed,
                         total_parts=len(manifest.chunks),
                         provenance="audio_transcription",
                     ),
                 )
-                transcript = provider.transcribe(
-                    ProviderRequest(
-                        audio_path=audio.path,
-                        model_id=options.model,
-                        duration=chunk.duration,
-                        language=options.language,
-                        context_prompt=self._context_before(chunk.index, results),
-                    ),
-                    token,
+                manifest, attempt_id = self._start_remote_attempt(
+                    manifest,
+                    stage="transcription",
+                    unit_id=f"chunk-{chunk.index}",
+                    provider=options.provider,
+                    model=options.model,
                 )
-                token.raise_if_cancelled()
+                try:
+                    transcript = provider.transcribe(
+                        ProviderRequest(
+                            audio_path=audio.path,
+                            model_id=options.model,
+                            duration=chunk.duration,
+                            language=options.language,
+                            context_prompt=self._context_before(chunk.index, results),
+                        ),
+                        token,
+                    )
+                    token.raise_if_cancelled()
+                except OperationCancelled:
+                    self._finish_remote_attempt(
+                        manifest.job_id,
+                        attempt_id,
+                        status="remote_ambiguous",
+                        remote_result_ambiguous=True,
+                        error_code="cancelled_in_flight",
+                    )
+                    raise
+                except BaseException as exc:
+                    self._finish_remote_attempt(
+                        manifest.job_id,
+                        attempt_id,
+                        status="failed",
+                        error_code=_error_code(exc),
+                    )
+                    raise
                 record = build_cost_record(
                     stage="transcription",
                     unit_id=f"chunk-{chunk.index}",
@@ -725,6 +782,12 @@ class TranscriptionPipeline:
                 transcript = _with_cost_record(transcript, record)
                 manifest = self.job_store.save_chunk_result(
                     manifest.job_id, chunk.index, transcript
+                )
+                manifest = self._finish_remote_attempt(
+                    manifest.job_id,
+                    attempt_id,
+                    status="accepted",
+                    cost_record=record,
                 )
                 results[chunk.index] = transcript
                 manifest = self._update_cost_metadata(manifest)
@@ -776,6 +839,22 @@ class TranscriptionPipeline:
             status=JobStatus.RUNNING,
         )
         manifest = self._update_cost_metadata(manifest)
+        try:
+            manifest, output_groups = self._ensure_original_exports(
+                manifest,
+                options,
+                transcript,
+                token,
+                progress,
+                provenance,
+            )
+        except BaseException:
+            self._save_stage(
+                manifest,
+                "original_export_failed",
+                status=JobStatus.FAILED,
+            )
+            raise
 
         improved_text: str | None = None
         if options.improve_with_ai:
@@ -790,33 +869,48 @@ class TranscriptionPipeline:
                     progress,
                 )
 
-        manifest = self._save_stage(
-            manifest,
-            "exporting",
-            status=JobStatus.RUNNING,
-        )
-        self._report_manifest(
-            progress,
-            manifest,
-            source_name,
-            "running",
-            "Criando os arquivos finais…",
-            provenance,
-        )
-        try:
-            outputs, output_groups = self._export_all(
-                transcript,
-                improved_text,
+        if improved_text is not None:
+            manifest = self._save_stage(
                 manifest,
-                options,
-                token,
+                "exporting_improved",
+                status=JobStatus.RUNNING,
             )
-        except BaseException:
-            self._save_stage(manifest, "export_failed", status=JobStatus.FAILED)
-            raise
-        primary = _primary_output(
-            output_groups.get("improved", ()) or outputs
-        )
+            self._report_manifest(
+                progress,
+                manifest,
+                source_name,
+                "running",
+                "Criando os arquivos do texto melhorado…",
+                provenance,
+            )
+            try:
+                improved_outputs = self._export_improved(
+                    transcript,
+                    improved_text,
+                    manifest,
+                    options,
+                    token,
+                )
+            except BaseException:
+                self._save_stage(
+                    manifest,
+                    "improved_export_failed",
+                    status=JobStatus.FAILED,
+                )
+                raise
+            output_groups = {
+                **output_groups,
+                "improved": improved_outputs,
+            }
+            manifest = self._save_output_groups(
+                manifest,
+                output_groups,
+                stage="improvement_exported",
+            )
+
+        token.raise_if_cancelled()
+        outputs = _flatten_output_groups(output_groups)
+        primary = _primary_output(output_groups.get("improved", ()) or outputs)
         metadata = {
             **dict(manifest.metadata),
             "provenance": provenance,
@@ -850,33 +944,83 @@ class TranscriptionPipeline:
             output_groups,
         )
 
-    def _export_all(
+    def _ensure_original_exports(
+        self,
+        manifest: JobManifest,
+        options: PipelineOptions,
+        transcript: Transcript,
+        token: CancellationToken,
+        progress: ProgressCallback | None,
+        provenance: str,
+    ) -> tuple[JobManifest, dict[str, tuple[Path, ...]]]:
+        saved = _saved_output_groups(manifest)
+        expected = len(options.formats)
+        existing = (*saved["original"], *saved["captions"])
+        if (
+            bool(manifest.metadata.get("original_ready"))
+            and len(existing) == expected
+            and all(path.is_file() for path in existing)
+        ):
+            return manifest, saved
+
+        source_name = str(
+            manifest.metadata.get("source_name") or _source_name(manifest.source)
+        )
+        manifest = self._save_stage(
+            manifest,
+            "exporting_original",
+            status=JobStatus.RUNNING,
+        )
+        self._report_manifest(
+            progress,
+            manifest,
+            source_name,
+            "running",
+            "Transcrição pronta; criando os arquivos originais…",
+            provenance,
+        )
+        groups = self._export_original(
+            transcript,
+            manifest,
+            options,
+            token,
+        )
+        manifest = self._save_output_groups(
+            manifest,
+            groups,
+            stage="original_exported",
+            extra_metadata={"original_ready": True},
+        )
+        self._report_manifest(
+            progress,
+            manifest,
+            source_name,
+            "running",
+            (
+                "Transcrição original pronta; iniciando a melhoria…"
+                if options.improve_with_ai
+                else "Transcrição original pronta."
+            ),
+            provenance,
+        )
+        return manifest, groups
+
+    def _export_original(
         self,
         transcript: Transcript,
-        improved_text: str | None,
         manifest: JobManifest,
         options: PipelineOptions,
         token: CancellationToken,
-    ) -> tuple[tuple[Path, ...], dict[str, tuple[Path, ...]]]:
-        folder = self._output_folder(manifest.source, options)
-        folder.mkdir(parents=True, exist_ok=True)
-        if not folder.is_dir():
-            raise PipelineError("A pasta de saída não pôde ser criada.")
-        stem = _available_result_stem(
-            folder,
-            str(manifest.metadata.get("source_name") or _source_name(manifest.source)),
-            options.formats,
-            improved_text is not None,
-        )
+    ) -> dict[str, tuple[Path, ...]]:
+        folder, stem = self._result_destination(manifest, options)
 
         original_outputs: list[Path] = []
         caption_outputs: list[Path] = []
-        improved_outputs: list[Path] = []
         for output_format in options.formats:
             token.raise_if_cancelled()
             original_suffix = (
                 " — transcrição"
-                if improved_text is not None and output_format in {"docx", "txt"}
+                if options.improve_with_ai and output_format in {"docx", "txt"}
                 else ""
             )
             destination = folder / f"{stem}{original_suffix}.{output_format}"
@@ -913,35 +1057,91 @@ class TranscriptionPipeline:
             else:
                 original_outputs.append(output)
 
-        if improved_text is not None:
-            title = str(manifest.metadata.get("source_name") or stem)
-            for output_format in options.formats:
-                if output_format not in {"docx", "txt"}:
-                    continue
-                token.raise_if_cancelled()
-                destination = folder / f"{stem} — texto melhorado.{output_format}"
-                if output_format == "docx":
-                    output = export_improved_docx(
-                        improved_text,
-                        destination,
-                        title=title,
-                        language=transcript.language,
-                    )
-                else:
-                    output = export_improved_txt(improved_text, destination)
-                improved_outputs.append(output)
-
-        groups = {
-            "improved": tuple(improved_outputs),
+        return {
+            "improved": (),
             "original": tuple(original_outputs),
             "captions": tuple(caption_outputs),
         }
-        outputs = (
-            *groups["original"],
-            *groups["captions"],
-            *groups["improved"],
+
+    def _export_improved(
+        self,
+        transcript: Transcript,
+        improved_text: str,
+        manifest: JobManifest,
+        options: PipelineOptions,
+        token: CancellationToken,
+    ) -> tuple[Path, ...]:
+        folder, stem = self._result_destination(manifest, options)
+        title = str(manifest.metadata.get("source_name") or stem)
+        outputs: list[Path] = []
+        for output_format in options.formats:
+            if output_format not in {"docx", "txt"}:
+                continue
+            token.raise_if_cancelled()
+            destination = folder / f"{stem} — texto melhorado.{output_format}"
+            if output_format == "docx":
+                output = export_improved_docx(
+                    improved_text,
+                    destination,
+                    title=title,
+                    language=transcript.language,
+                )
+            else:
+                output = export_improved_txt(improved_text, destination)
+            outputs.append(output)
+        return tuple(outputs)
+
+    def _result_destination(
+        self,
+        manifest: JobManifest,
+        options: PipelineOptions,
+    ) -> tuple[Path, str]:
+        folder = self._output_folder(manifest.source, options)
+        folder.mkdir(parents=True, exist_ok=True)
+        if not folder.is_dir():
+            raise PipelineError("A pasta de saída não pôde ser criada.")
+        current = self.job_store.load_job(manifest.job_id)
+        stem = str(current.metadata.get("result_stem") or "").strip()
+        if not stem:
+            stem = _available_result_stem(
+                folder,
+                str(current.metadata.get("source_name") or _source_name(current.source)),
+                options.formats,
+                options.improve_with_ai,
+            )
+            metadata = {**dict(current.metadata), "result_stem": stem}
+            self.job_store.save_job(replace(current, metadata=metadata))
+        return folder, stem
+
+    def _save_output_groups(
+        self,
+        manifest: JobManifest,
+        groups: Mapping[str, Sequence[Path]],
+        *,
+        stage: str,
+        extra_metadata: Mapping[str, Any] | None = None,
+    ) -> JobManifest:
+        current = self.job_store.load_job(manifest.job_id)
+        normalized = {
+            key: tuple(Path(path) for path in groups.get(key, ()))
+            for key in ("improved", "original", "captions")
+        }
+        outputs = _flatten_output_groups(normalized)
+        primary = _primary_output(normalized["improved"] or outputs)
+        metadata = {
+            **dict(current.metadata),
+            "pipeline_stage": stage,
+            "output_paths": [str(path) for path in outputs],
+            "output_groups": {
+                key: [str(path) for path in paths]
+                for key, paths in normalized.items()
+            },
+            "primary_output": str(primary) if primary else "",
+            **dict(extra_metadata or {}),
+        }
+        return self.job_store.save_job(
+            replace(current, status=JobStatus.RUNNING, metadata=metadata)
         )
-        return tuple(outputs), groups
 
     def _improve_text(
         self,
@@ -986,13 +1186,6 @@ class TranscriptionPipeline:
 
         saved = self.job_store.load_editorial_results(manifest.job_id)
         route = editorial_route_for(options.provider, options.model)
-        protected_speakers = tuple(
-            dict.fromkeys(
-                segment.speaker.strip()
-                for segment in transcript.segments
-                if segment.speaker and segment.speaker.strip()
-            )
-        )
         pending = [block for block in blocks if block.block_id not in saved]
         provider: EditorialProvider | None = None
         if pending:
@@ -1024,7 +1217,7 @@ class TranscriptionPipeline:
                     detail=(
                         f"Melhorando o texto — parte {completed + 1} de {len(blocks)}…"
                     ),
-                    progress=completed / len(blocks),
+                    progress=overall_progress(manifest, "improving"),
                     completed_parts=completed,
                     total_parts=len(blocks),
                     provenance=str(manifest.metadata.get("provenance") or ""),
@@ -1034,16 +1227,41 @@ class TranscriptionPipeline:
             )
             if provider is None:
                 raise PipelineError("A melhoria não pôde ser iniciada.")
-            response = provider.improve(
-                EditorialRequest(
-                    block_id=block.block_id,
-                    text=block.text,
-                    model_id=route.model_id,
-                    reasoning_effort=route.reasoning_effort,
-                    previous_context=_editorial_context(block.index, blocks),
-                ),
-                token,
+            manifest, attempt_id = self._start_remote_attempt(
+                manifest,
+                stage="improvement",
+                unit_id=block.block_id,
+                provider=options.provider,
+                model=route.model_id,
             )
+            try:
+                response = provider.improve(
+                    EditorialRequest(
+                        block_id=block.block_id,
+                        text=block.text,
+                        model_id=route.model_id,
+                        reasoning_effort=route.reasoning_effort,
+                        previous_context=_editorial_context(block.index, blocks),
+                    ),
+                    token,
+                )
+            except OperationCancelled:
+                self._finish_remote_attempt(
+                    manifest.job_id,
+                    attempt_id,
+                    status="remote_ambiguous",
+                    remote_result_ambiguous=True,
+                    error_code="cancelled_in_flight",
+                )
+                raise
+            except BaseException as exc:
+                self._finish_remote_attempt(
+                    manifest.job_id,
+                    attempt_id,
+                    status="failed",
+                    error_code=_error_code(exc),
+                )
+                raise
             cost_record = build_cost_record(
                 stage="improvement",
                 unit_id=block.block_id,
@@ -1052,27 +1270,36 @@ class TranscriptionPipeline:
                 usage=response.usage,
             )
             try:
-                improved = validate_editorial_result(
-                    block.text,
-                    response.text,
-                    protected_speakers=protected_speakers,
+                improved = validate_editorial_result(block.text, response.text)
+                value = {
+                    "block_id": block.block_id,
+                    "index": block.index,
+                    "text": improved,
+                    "model": response.model_id,
+                    "contract_version": EDITORIAL_CONTRACT_VERSION,
+                    "usage": response.usage.to_dict(),
+                    "cost_record": cost_record.to_dict(),
+                }
+                self.job_store.save_editorial_result(
+                    manifest.job_id,
+                    block.block_id,
+                    value,
                 )
-            except EditorialValidationError:
-                self._record_cost_adjustment(manifest, cost_record)
+            except BaseException as exc:
+                self._finish_remote_attempt(
+                    manifest.job_id,
+                    attempt_id,
+                    status="failed",
+                    error_code=_error_code(exc),
+                    cost_record=cost_record,
+                )
+                self._update_cost_metadata(manifest)
                 raise
-            value = {
-                "block_id": block.block_id,
-                "index": block.index,
-                "text": improved,
-                "model": response.model_id,
-                "contract_version": EDITORIAL_CONTRACT_VERSION,
-                "usage": response.usage.to_dict(),
-                "cost_record": cost_record.to_dict(),
-            }
-            self.job_store.save_editorial_result(
+            manifest = self._finish_remote_attempt(
                 manifest.job_id,
-                block.block_id,
-                value,
+                attempt_id,
+                status="accepted",
+                cost_record=cost_record,
             )
             saved[block.block_id] = value
             manifest = self._update_cost_metadata(manifest)
@@ -1086,6 +1313,7 @@ class TranscriptionPipeline:
                 },
             )
 
+        token.raise_if_cancelled()
         assembled = assemble_editorial_results(
             blocks,
             {
@@ -1145,6 +1373,16 @@ class TranscriptionPipeline:
             for raw in raw_adjustments:
                 if isinstance(raw, Mapping):
                     records.append(CostRecord.from_dict(raw))
+        raw_attempts = current.metadata.get("attempts", ())
+        if isinstance(raw_attempts, Sequence) and not isinstance(
+            raw_attempts, (str, bytes)
+        ):
+            for attempt in raw_attempts:
+                if not isinstance(attempt, Mapping) or attempt.get("status") == "accepted":
+                    continue
+                raw = attempt.get("cost_record")
+                if isinstance(raw, Mapping):
+                    records.append(CostRecord.from_dict(raw))
         zero_proven = (
             str(current.metadata.get("provenance") or "") != "audio_transcription"
             and not bool(current.settings.get("improve_with_ai", False))
@@ -1153,25 +1391,240 @@ class TranscriptionPipeline:
         metadata = {**dict(current.metadata), "cost_summary": summary}
         return self.job_store.save_job(replace(current, metadata=metadata))
 
-    def _record_cost_adjustment(
+    def _start_remote_attempt(
         self,
         manifest: JobManifest,
-        record: CostRecord,
-    ) -> JobManifest:
+        *,
+        stage: str,
+        unit_id: str,
+        provider: str,
+        model: str,
+    ) -> tuple[JobManifest, str]:
         current = self.job_store.load_job(manifest.job_id)
-        raw_adjustments = current.metadata.get("cost_adjustments", ())
-        adjustments = (
-            [dict(item) for item in raw_adjustments if isinstance(item, Mapping)]
-            if isinstance(raw_adjustments, Sequence)
-            and not isinstance(raw_adjustments, (str, bytes))
+        raw_attempts = current.metadata.get("attempts", ())
+        attempts = (
+            [dict(item) for item in raw_attempts if isinstance(item, Mapping)]
+            if isinstance(raw_attempts, Sequence)
+            and not isinstance(raw_attempts, (str, bytes))
             else []
         )
-        value = record.to_dict()
-        value["unit_id"] = f"{record.unit_id}:rejected:{len(adjustments) + 1}"
-        adjustments.append(value)
-        metadata = {**dict(current.metadata), "cost_adjustments": adjustments}
-        saved = self.job_store.save_job(replace(current, metadata=metadata))
-        return self._update_cost_metadata(saved)
+        number = 1 + sum(
+            item.get("stage") == stage and item.get("unit_id") == unit_id
+            for item in attempts
+        )
+        attempt_id = f"{stage}:{unit_id}:{number}"
+        attempts.append(
+            {
+                "attempt_id": attempt_id,
+                "stage": stage,
+                "unit_id": unit_id,
+                "provider": provider,
+                "model": model,
+                "status": "running",
+                "started_at": _now(),
+                "finished_at": None,
+                "error_code": None,
+                "remote_result_ambiguous": False,
+            }
+        )
+        metadata = {
+            **dict(current.metadata),
+            "attempts": attempts,
+            "active_attempt_id": attempt_id,
+        }
+        return (
+            self.job_store.save_job(replace(current, metadata=metadata)),
+            attempt_id,
+        )
+
+    def _finish_remote_attempt(
+        self,
+        job_id: str,
+        attempt_id: str,
+        *,
+        status: str,
+        error_code: str | None = None,
+        remote_result_ambiguous: bool = False,
+        cost_record: CostRecord | None = None,
+    ) -> JobManifest:
+        current = self.job_store.load_job(job_id)
+        raw_attempts = current.metadata.get("attempts", ())
+        attempts = (
+            [dict(item) for item in raw_attempts if isinstance(item, Mapping)]
+            if isinstance(raw_attempts, Sequence)
+            and not isinstance(raw_attempts, (str, bytes))
+            else []
+        )
+        found = False
+        for item in attempts:
+            if item.get("attempt_id") != attempt_id:
+                continue
+            item.update(
+                status=status,
+                finished_at=_now(),
+                error_code=error_code,
+                remote_result_ambiguous=remote_result_ambiguous,
+            )
+            if cost_record is not None:
+                item["cost_record"] = cost_record.to_dict()
+            found = True
+            break
+        if not found:
+            raise PipelineError("A tentativa remota ativa não pôde ser reconciliada.")
+        metadata = {**dict(current.metadata), "attempts": attempts}
+        if metadata.get("active_attempt_id") == attempt_id:
+            metadata.pop("active_attempt_id", None)
+        if remote_result_ambiguous:
+            metadata["remote_result_ambiguous"] = True
+        return self.job_store.save_job(replace(current, metadata=metadata))
+
+    def mark_stalled_cancelled(self, job_id: str) -> JobManifest:
+        """Persist a forced cancellation after the worker process is gone."""
+
+        current = self.job_store.load_job(job_id)
+        raw_attempts = current.metadata.get("attempts", ())
+        attempts = (
+            [dict(item) for item in raw_attempts if isinstance(item, Mapping)]
+            if isinstance(raw_attempts, Sequence)
+            and not isinstance(raw_attempts, (str, bytes))
+            else []
+        )
+        ambiguous = self._reconcile_unfinished_attempts(
+            current,
+            attempts,
+            unresolved_error_code="cancelled_in_flight",
+        )
+        metadata = {
+            **dict(current.metadata),
+            "attempts": attempts,
+            "pipeline_stage": "cancelled",
+            "cancelled_from_stage": str(
+                current.metadata.get("pipeline_stage") or ""
+            ),
+            "cancellation_state": "cancelled",
+            "status_message": (
+                "Cancelada; a transcrição original foi preservada. "
+                "Uma chamada em andamento pode ter sido processada pelo serviço."
+                if ambiguous
+                else "Cancelada; as partes concluídas foram preservadas."
+            ),
+        }
+        metadata.pop("active_attempt_id", None)
+        if ambiguous:
+            metadata["remote_result_ambiguous"] = True
+        return self.job_store.save_job(
+            replace(current, status=JobStatus.CANCELLED, metadata=metadata)
+        )
+
+    def request_cancel(self, job_id: str) -> JobManifest:
+        """Persist the user's intent before signalling the worker process."""
+
+        current = self.job_store.load_job(job_id)
+        raw_attempts = current.metadata.get("attempts", ())
+        attempts = (
+            [dict(item) for item in raw_attempts if isinstance(item, Mapping)]
+            if isinstance(raw_attempts, Sequence)
+            and not isinstance(raw_attempts, (str, bytes))
+            else []
+        )
+        for item in attempts:
+            if item.get("status") == "running":
+                item["status"] = "cancel_requested"
+                item["cancel_requested_at"] = _now()
+        metadata = {
+            **dict(current.metadata),
+            "attempts": attempts,
+            "cancel_requested_at": _now(),
+            "cancellation_state": "cancel_requested",
+            "status_message": (
+                "Cancelamento solicitado; preservando as partes concluídas."
+            ),
+        }
+        return self.job_store.save_job(replace(current, metadata=metadata))
+
+    def mark_interrupted(self, job_id: str) -> JobManifest:
+        """Pause a job left running by an earlier process or app session."""
+
+        current = self.job_store.load_job(job_id)
+        raw_attempts = current.metadata.get("attempts", ())
+        attempts = (
+            [dict(item) for item in raw_attempts if isinstance(item, Mapping)]
+            if isinstance(raw_attempts, Sequence)
+            and not isinstance(raw_attempts, (str, bytes))
+            else []
+        )
+        ambiguous = self._reconcile_unfinished_attempts(
+            current,
+            attempts,
+            unresolved_error_code="process_interrupted",
+        )
+        stage = str(current.metadata.get("pipeline_stage") or "")
+        legacy_editorial = stage == "improving" and not attempts
+        metadata = {
+            **dict(current.metadata),
+            "attempts": attempts,
+            "status_message": (
+                "Interrompida durante uma chamada remota; retome explicitamente "
+                "porque o serviço pode ter processado a tentativa."
+                if ambiguous or legacy_editorial
+                else "Interrompida quando o aplicativo foi fechado."
+            ),
+        }
+        metadata.pop("active_attempt_id", None)
+        if ambiguous or legacy_editorial:
+            metadata["remote_result_ambiguous"] = True
+        return self.job_store.save_job(
+            replace(current, status=JobStatus.PAUSED, metadata=metadata)
+        )
+
+    def _reconcile_unfinished_attempts(
+        self,
+        manifest: JobManifest,
+        attempts: list[dict[str, Any]],
+        *,
+        unresolved_error_code: str,
+    ) -> bool:
+        """Prefer a durable artifact over an unfinished manifest update."""
+
+        saved_costs: dict[tuple[str, str], Mapping[str, Any] | None] = {}
+        for index, transcript in self.job_store.load_completed_results(
+            manifest.job_id
+        ).items():
+            raw_cost = transcript.metadata.get("cost_record")
+            saved_costs[("transcription", f"chunk-{index}")] = (
+                raw_cost if isinstance(raw_cost, Mapping) else None
+            )
+        for block_id, value in self.job_store.load_editorial_results(
+            manifest.job_id
+        ).items():
+            raw_cost = value.get("cost_record")
+            saved_costs[("improvement", block_id)] = (
+                raw_cost if isinstance(raw_cost, Mapping) else None
+            )
+
+        ambiguous = False
+        for item in attempts:
+            if item.get("status") not in {"running", "cancel_requested"}:
+                continue
+            key = (str(item.get("stage") or ""), str(item.get("unit_id") or ""))
+            if key in saved_costs:
+                item.update(
+                    status="accepted",
+                    finished_at=_now(),
+                    error_code=None,
+                    remote_result_ambiguous=False,
+                )
+                if saved_costs[key] is not None:
+                    item["cost_record"] = dict(saved_costs[key] or {})
+                continue
+            item.update(
+                status="remote_ambiguous",
+                finished_at=_now(),
+                error_code=unresolved_error_code,
+                remote_result_ambiguous=True,
+            )
+            ambiguous = True
+        return ambiguous
 
     @staticmethod
     def _cost_labels(
@@ -1293,6 +1746,41 @@ class TranscriptionPipeline:
             message=_public_error(exc),
         )
 
+    def _mark_cancelled(
+        self,
+        manifest: JobManifest,
+        *,
+        message: str,
+    ) -> JobManifest:
+        current = self.job_store.load_job(manifest.job_id)
+        previous_stage = str(current.metadata.get("pipeline_stage") or "")
+        raw_attempts = current.metadata.get("attempts", ())
+        attempts = (
+            [dict(item) for item in raw_attempts if isinstance(item, Mapping)]
+            if isinstance(raw_attempts, Sequence)
+            and not isinstance(raw_attempts, (str, bytes))
+            else []
+        )
+        ambiguous = self._reconcile_unfinished_attempts(
+            current,
+            attempts,
+            unresolved_error_code="cancelled_in_flight",
+        )
+        metadata = {
+            **dict(current.metadata),
+            "attempts": attempts,
+            "pipeline_stage": "cancelled",
+            "cancelled_from_stage": previous_stage,
+            "cancellation_state": "cancelled",
+            "status_message": message,
+        }
+        metadata.pop("active_attempt_id", None)
+        if ambiguous:
+            metadata["remote_result_ambiguous"] = True
+        return self.job_store.save_job(
+            replace(current, status=JobStatus.CANCELLED, metadata=metadata)
+        )
+
     def _report_manifest(
         self,
         callback: ProgressCallback | None,
@@ -1303,6 +1791,16 @@ class TranscriptionPipeline:
         provenance: str,
     ) -> None:
         current = self.job_store.load_job(manifest.job_id)
+        stage = str(current.metadata.get("pipeline_stage") or "")
+        if stage == "improving":
+            total_parts = max(1, int(current.metadata.get("editorial_total") or 1))
+            completed_parts = min(
+                total_parts,
+                max(0, int(current.metadata.get("editorial_completed") or 0)),
+            )
+        else:
+            completed_parts = len(current.completed_chunks)
+            total_parts = len(current.chunks)
         self._report(
             callback,
             PipelineProgress(
@@ -1310,11 +1808,11 @@ class TranscriptionPipeline:
                 source_name=source_name,
                 state=state,
                 detail=detail,
-                progress=current.progress,
-                completed_parts=len(current.completed_chunks),
-                total_parts=len(current.chunks),
+                progress=overall_progress(current, stage),
+                completed_parts=completed_parts,
+                total_parts=total_parts,
                 provenance=provenance,
-                stage=str(current.metadata.get("pipeline_stage") or ""),
+                stage=stage,
                 **self._cost_labels(current, in_progress=state != "completed"),
             ),
         )
@@ -1489,6 +1987,74 @@ def _subtitle_provenance(origin: SubtitleOrigin) -> str:
     return "existing_captions"
 
 
+def overall_progress(manifest: JobManifest, stage: str | None = None) -> float:
+    """Return monotonic progress for every stage requested by the job."""
+
+    current_stage = stage or str(manifest.metadata.get("pipeline_stage") or "")
+    improve = bool(manifest.settings.get("improve_with_ai", False))
+    if manifest.status == JobStatus.COMPLETED:
+        return 1.0
+    if current_stage in {"improvement_exported", "completed"}:
+        return 0.99
+    if current_stage == "cancelled" and bool(manifest.metadata.get("original_ready")):
+        return 0.65 if improve else 0.95
+    if current_stage in {"exporting_improved", "improved_export_failed"}:
+        return 0.97
+    if current_stage == "improvement_complete":
+        return 0.95
+    if current_stage == "improving":
+        total = max(1, int(manifest.metadata.get("editorial_total") or 1))
+        completed = min(
+            total,
+            max(0, int(manifest.metadata.get("editorial_completed") or 0)),
+        )
+        return 0.65 + 0.30 * completed / total
+    if current_stage == "original_exported":
+        return 0.65 if improve else 0.95
+    if current_stage in {"exporting_original", "original_export_failed"}:
+        return 0.62 if improve else 0.93
+    if current_stage == "transcription_complete":
+        return 0.60 if improve else 0.90
+    scale = 0.60 if improve else 0.90
+    return min(scale, max(0.0, manifest.progress * scale))
+
+
+def _now() -> str:
+    return datetime.now(UTC).isoformat(timespec="milliseconds")
+
+
+def _error_code(exc: BaseException) -> str:
+    if isinstance(exc, ProviderError):
+        return exc.code
+    if isinstance(exc, OperationCancelled):
+        return "cancelled"
+    return type(exc).__name__.casefold()
+
+
+def _saved_output_groups(
+    manifest: JobManifest,
+) -> dict[str, tuple[Path, ...]]:
+    raw = manifest.metadata.get("output_groups")
+    source = raw if isinstance(raw, Mapping) else {}
+    return {
+        key: tuple(
+            Path(str(path))
+            for path in source.get(key, ())
+        )
+        for key in ("improved", "original", "captions")
+    }
+
+
+def _flatten_output_groups(
+    groups: Mapping[str, Sequence[Path]],
+) -> tuple[Path, ...]:
+    return tuple(
+        Path(path)
+        for key in ("original", "captions", "improved")
+        for path in groups.get(key, ())
+    )
+
+
 def _primary_output(outputs: Sequence[Path]) -> Path | None:
     by_suffix = {path.suffix.casefold().lstrip("."): path for path in outputs}
     return next(
@@ -1516,10 +2082,18 @@ def _as_bool(value: object) -> bool:
 def _public_error(exc: BaseException) -> str:
     if isinstance(exc, ProviderError):
         return exc.message
+    if isinstance(exc, EditorialValidationError):
+        return (
+            "A melhoria não devolveu um texto utilizável. "
+            "A transcrição original está preservada."
+        )
     if isinstance(exc, PipelineError):
         return str(exc)
     if isinstance(exc, MediaDependencyError):
-        return "Instale FFmpeg, ffprobe e yt-dlp para preparar esta mídia."
+        return (
+            "Não foi possível preparar esta mídia. Atualize o São Francisco "
+            "e tente novamente."
+        )
     if isinstance(exc, MediaError):
         return "A mídia não pôde ser preparada para transcrição."
     if isinstance(exc, ExportError):
@@ -1543,5 +2117,6 @@ __all__ = [
     "SUPPORTED_FORMATS",
     "TranscriptionPipeline",
     "export_markdown",
+    "overall_progress",
     "transcript_to_markdown",
 ]

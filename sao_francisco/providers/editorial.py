@@ -24,6 +24,7 @@ forma original. Preserve literalmente cada algarismo e a grafia de números, dat
 valores e percentuais: não os escreva por extenso, não mude separadores e não os reformate.
 Devolva somente o bloco-alvo revisado; não repita o contexto.
 """
+EDITORIAL_TIMEOUT_SECONDS = 300.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,7 +74,11 @@ class OpenAIEditorialProvider:
                 message="O componente da OpenAI não foi instalado corretamente.",
                 retryable=False,
             ) from exc
-        return OpenAI(api_key=self._api_key, timeout=1800.0, max_retries=0)
+        return OpenAI(
+            api_key=self._api_key,
+            timeout=EDITORIAL_TIMEOUT_SECONDS,
+            max_retries=0,
+        )
 
     def improve(
         self,
@@ -140,13 +145,20 @@ class GeminiEditorialProvider:
     def _client(self) -> Any:
         try:
             from google import genai
+            from google.genai import types
         except ImportError as exc:
             raise ProviderError(
                 code="missing_dependency",
                 message="O componente do Gemini não foi instalado corretamente.",
                 retryable=False,
             ) from exc
-        return genai.Client(api_key=self._api_key)
+        return genai.Client(
+            api_key=self._api_key,
+            http_options=types.HttpOptions(
+                timeout=int(EDITORIAL_TIMEOUT_SECONDS * 1_000),
+                retry_options=types.HttpRetryOptions(attempts=1),
+            ),
+        )
 
     def improve(
         self,
@@ -357,6 +369,7 @@ def _classify_gemini_editorial_error(exc: Exception) -> ProviderError:
 
 
 __all__ = [
+    "EDITORIAL_TIMEOUT_SECONDS",
     "EDITORIAL_INSTRUCTIONS",
     "EditorialProvider",
     "EditorialRequest",

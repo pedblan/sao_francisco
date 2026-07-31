@@ -47,13 +47,19 @@ class GeminiProvider:
     def _client(self) -> Any:
         try:
             from google import genai
+            from google.genai import types
         except ImportError as exc:
             raise ProviderError(
                 code="missing_dependency",
                 message="O componente do Gemini não foi instalado corretamente.",
                 retryable=False,
             ) from exc
-        return genai.Client(api_key=self._api_key)
+        return genai.Client(
+            api_key=self._api_key,
+            http_options=types.HttpOptions(
+                retry_options=types.HttpRetryOptions(attempts=1),
+            ),
+        )
 
     def validate_credential(self) -> None:
         client = self._client()

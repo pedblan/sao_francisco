@@ -144,6 +144,9 @@ O script cria um aplicativo macOS nativo, assinado ad hoc para testes locais, e 
 distribui em arquivos ZIP e DMG na pasta `dist/`. O FFmpeg e o FFprobe continuam sendo
 dependências do sistema; o yt-dlp é incorporado ao aplicativo.
 
+Os downloads públicos para macOS passam depois pela assinatura Developer ID e pela
+notarização da Apple; a assinatura ad hoc do script não é promovida como release.
+
 ### Build para Windows x64
 
 Em um computador Windows 10 ou 11 com Python 3.13:

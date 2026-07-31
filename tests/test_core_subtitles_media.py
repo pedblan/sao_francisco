@@ -355,6 +355,22 @@ def test_default_ytdlp_command_uses_bundled_executable_when_frozen(
     )
 
 
+def test_default_ytdlp_command_uses_installed_module_from_source(
+    monkeypatch,
+) -> None:
+    monkeypatch.delattr("sao_francisco.core.media.sys.frozen", raising=False)
+    monkeypatch.setattr(
+        "sao_francisco.core.media.sys.executable",
+        "/private/tmp/sao-francisco-venv/bin/python",
+    )
+
+    assert _default_ytdlp_command() == (
+        "/private/tmp/sao-francisco-venv/bin/python",
+        "-m",
+        "yt_dlp",
+    )
+
+
 def test_frozen_application_directory_is_first_on_media_path(
     tmp_path,
     monkeypatch,

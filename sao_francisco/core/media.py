@@ -943,7 +943,7 @@ def _subprocess_environment() -> dict[str, str]:
 def _default_ytdlp_command() -> tuple[str, ...]:
     if getattr(sys, "frozen", False):
         return (sys.executable, "--yt-dlp")
-    return ("yt-dlp",)
+    return (sys.executable, "-m", "yt_dlp")
 
 
 def _resolve_executable(executable: str, search_path: str) -> str:

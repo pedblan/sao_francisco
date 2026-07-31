@@ -58,6 +58,9 @@ try {
     if (-not (Test-Path $BuiltExe)) {
         throw "O executável do São Francisco não foi criado."
     }
+    $Version = & $BuildPython -c (
+        "from sao_francisco import __version__; print(__version__)"
+    )
 
     $FfmpegArchive = Join-Path $DownloadRoot "ffmpeg.zip"
     $FfmpegRoot = Join-Path $DownloadRoot "ffmpeg"
@@ -98,7 +101,7 @@ try {
         -OutFile (Join-Path $ThirdPartyRoot "Deno-LICENSE.md")
 
     $Readme = @"
-SÃO FRANCISCO 0.1.1 — WINDOWS
+SÃO FRANCISCO $Version — WINDOWS
 
 1. Extraia todo o conteúdo deste ZIP para uma pasta.
 2. Abra "São Francisco.exe".
@@ -118,6 +121,10 @@ A Ajuda do aplicativo explica como obter uma chave e como começar.
     if ($LASTEXITCODE -ne 0) {
         throw "O teste de abertura do aplicativo falhou."
     }
+    & $BuiltExe --process-smoke-test
+    if ($LASTEXITCODE -ne 0) {
+        throw "O teste do subprocesso descartável falhou."
+    }
     & $BuiltExe --yt-dlp --version
     if ($LASTEXITCODE -ne 0) {
         throw "O componente para vídeos da internet não respondeu."
@@ -126,9 +133,6 @@ A Ajuda do aplicativo explica como obter uma chave e como começar.
     & (Join-Path $BuiltApp "ffprobe.exe") -version | Select-Object -First 1
     & (Join-Path $BuiltApp "deno.exe") --version | Select-Object -First 1
 
-    $Version = & $BuildPython -c (
-        "from sao_francisco import __version__; print(__version__)"
-    )
     $ZipPath = Join-Path $ProjectRoot (
         "dist\Sao-Francisco-$Version-windows-x64.zip"
     )
@@ -144,6 +148,10 @@ A Ajuda do aplicativo explica como obter uma chave e como começar.
     & $VerifiedExe --smoke-test
     if ($LASTEXITCODE -ne 0) {
         throw "O aplicativo extraído do ZIP não abriu corretamente."
+    }
+    & $VerifiedExe --process-smoke-test
+    if ($LASTEXITCODE -ne 0) {
+        throw "O subprocesso do aplicativo extraído não respondeu."
     }
     & (Join-Path $VerifiedApp "ffmpeg.exe") -version | Select-Object -First 1
     & (Join-Path $VerifiedApp "deno.exe") --version | Select-Object -First 1

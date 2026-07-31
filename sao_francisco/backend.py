@@ -1,8 +1,9 @@
 """Qt-facing application adapter.
 
-All expensive media and provider work is dispatched to ``_PipelineWorker`` in a
-dedicated ``QThread``.  This object owns only GUI state, validation, queueing,
-safe credential hand-off, and conversion between Python models and QML maps.
+Production media and provider work runs in a disposable child process. This
+object owns GUI state, validation, queueing, safe credential hand-off, and
+conversion between Python models and QML maps. Injected test pipelines retain
+the legacy thread executor so small unit fakes remain straightforward.
 """
 
 from __future__ import annotations
@@ -10,9 +11,13 @@ from __future__ import annotations
 import uuid
 from collections import deque
 from collections.abc import Mapping
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import datetime
+from multiprocessing import get_context
 from pathlib import Path
+from queue import Empty
+from time import monotonic
 from typing import Any
 from urllib.parse import urlparse
 
@@ -39,6 +44,7 @@ from .core import (
     JobNotFoundError,
     JobStatus,
     JobStore,
+    JobStoreError,
     MediaDependencyError,
     MediaProcessor,
     OperationCancelled,
@@ -59,7 +65,9 @@ from .pipeline import (
     PipelineResult,
     PipelineValidationError,
     TranscriptionPipeline,
+    overall_progress,
 )
+from .process_worker import PipelineProcessConfig, run_pipeline_process
 from .providers import ProviderError, provider_for
 
 ROUTES = frozenset({"transcribe", "history", "settings", "help", "about"})
@@ -79,6 +87,9 @@ HELP_ANCHORS = frozenset(
     }
 )
 _SHUTDOWN_GRACE_MS = 5_000
+_CANCEL_GRACE_MS = 5_000
+_PROCESS_KILL_GRACE_MS = 1_000
+_PROCESS_POLL_MS = 25
 
 
 @dataclass(frozen=True, slots=True)
@@ -156,6 +167,216 @@ class _PipelineWorker(QObject):
             )
 
 
+class _ProcessExecutor(QObject):
+    """Own one disposable child process without blocking the Qt event loop."""
+
+    progress = Signal(str, object)
+    succeeded = Signal(str, str)
+    failed = Signal(str, str)
+    cancelled = Signal(str, str)
+    forcedCancelled = Signal(str, str)
+
+    def __init__(
+        self,
+        config: PipelineProcessConfig,
+        *,
+        context: Any | None = None,
+        target: Any = run_pipeline_process,
+        cancel_grace_ms: int = _CANCEL_GRACE_MS,
+        parent: QObject | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self._config = config
+        self._context = context or get_context("spawn")
+        self._target = target
+        self._cancel_grace_ms = max(0, int(cancel_grace_ms))
+        self._process: Any | None = None
+        self._message_queue: Any | None = None
+        self._cancel_event: Any | None = None
+        self._task_key = ""
+        self._last_job_id = ""
+        self._terminal: dict[str, Any] | None = None
+        self._cancel_deadline: float | None = None
+        self._kill_deadline: float | None = None
+        self._forced = False
+        self._timer = QTimer(self)
+        self._timer.setInterval(_PROCESS_POLL_MS)
+        self._timer.timeout.connect(self._poll)
+
+    @property
+    def running(self) -> bool:
+        return self._process is not None
+
+    def start(self, task: _QueuedTask) -> None:
+        if self.running:
+            raise RuntimeError("Já existe um processo de transcrição ativo.")
+        raw_options: dict[str, Any] | None = None
+        if task.options is not None:
+            raw_options = {
+                "provider": task.options.provider,
+                "model": task.options.model,
+                "language": task.options.language or "",
+                **task.options.to_manifest_settings(),
+            }
+        raw_task = {
+            "key": task.key,
+            "source": task.source,
+            "resume_job_id": task.resume_job_id or "",
+            "options": raw_options,
+        }
+        self._message_queue = self._context.Queue()
+        self._cancel_event = self._context.Event()
+        self._task_key = task.key
+        self._last_job_id = task.resume_job_id or ""
+        self._terminal = None
+        self._cancel_deadline = None
+        self._kill_deadline = None
+        self._forced = False
+        self._process = self._context.Process(
+            target=self._target,
+            args=(
+                raw_task,
+                self._config.to_mapping(),
+                self._message_queue,
+                self._cancel_event,
+            ),
+            name="sao-francisco-pipeline",
+            daemon=True,
+        )
+        try:
+            self._process.start()
+        except BaseException:
+            self._cleanup()
+            raise
+        self._timer.start()
+
+    def cancel(self) -> bool:
+        if not self.running or self._cancel_event is None:
+            return False
+        self._cancel_event.set()
+        if self._cancel_deadline is None:
+            self._cancel_deadline = monotonic() + self._cancel_grace_ms / 1_000
+        return True
+
+    def shutdown(self) -> None:
+        """Stop the child within a fixed bound while the app is closing."""
+
+        process = self._process
+        if process is None:
+            return
+        if self._cancel_event is not None:
+            self._cancel_event.set()
+        process.join(timeout=_SHUTDOWN_GRACE_MS / 1_000)
+        if process.is_alive():
+            process.terminate()
+            process.join(timeout=_PROCESS_KILL_GRACE_MS / 1_000)
+        if process.is_alive() and hasattr(process, "kill"):
+            process.kill()
+            process.join(timeout=_PROCESS_KILL_GRACE_MS / 1_000)
+        self._cleanup()
+
+    @Slot()
+    def _poll(self) -> None:
+        process = self._process
+        if process is None:
+            return
+        self._drain_messages()
+        now = monotonic()
+        if (
+            self._cancel_deadline is not None
+            and now >= self._cancel_deadline
+            and not self._forced
+            and process.is_alive()
+        ):
+            process.terminate()
+            self._forced = True
+            self._terminal = {
+                "kind": "forced_cancelled",
+                "key": self._task_key,
+                "job_id": self._last_job_id,
+            }
+            self._kill_deadline = now + _PROCESS_KILL_GRACE_MS / 1_000
+        if (
+            self._forced
+            and self._kill_deadline is not None
+            and now >= self._kill_deadline
+            and process.is_alive()
+            and hasattr(process, "kill")
+        ):
+            process.kill()
+            self._kill_deadline = now + _PROCESS_KILL_GRACE_MS / 1_000
+
+        if process.is_alive():
+            return
+        process.join(timeout=0)
+        self._drain_messages()
+        terminal = self._terminal or {
+            "kind": (
+                "forced_cancelled"
+                if self._cancel_deadline is not None
+                else "failed"
+            ),
+            "key": self._task_key,
+            "job_id": self._last_job_id,
+            "message": "O processo de transcrição terminou inesperadamente.",
+        }
+        self._emit_terminal(terminal)
+
+    def _drain_messages(self) -> None:
+        if self._message_queue is None:
+            return
+        while True:
+            try:
+                message = self._message_queue.get_nowait()
+            except (Empty, EOFError, OSError):
+                return
+            if not isinstance(message, Mapping):
+                continue
+            value = dict(message)
+            job_id = str(value.get("job_id") or "")
+            if job_id:
+                self._last_job_id = job_id
+            if value.get("kind") == "progress":
+                payload = value.get("payload")
+                if isinstance(payload, Mapping):
+                    self.progress.emit(self._task_key, dict(payload))
+                continue
+            self._terminal = value
+
+    def _emit_terminal(self, terminal: Mapping[str, Any]) -> None:
+        key = str(terminal.get("key") or self._task_key)
+        job_id = str(terminal.get("job_id") or self._last_job_id)
+        kind = str(terminal.get("kind") or "failed")
+        message = str(
+            terminal.get("message")
+            or "O processo de transcrição terminou inesperadamente."
+        )
+        self._cleanup()
+        if kind == "succeeded":
+            self.succeeded.emit(key, job_id)
+        elif kind == "cancelled":
+            self.cancelled.emit(key, job_id)
+        elif kind == "forced_cancelled":
+            self.forcedCancelled.emit(key, job_id)
+        else:
+            self.failed.emit(key, message)
+
+    def _cleanup(self) -> None:
+        self._timer.stop()
+        if self._message_queue is not None:
+            with suppress(OSError, ValueError):
+                self._message_queue.close()
+        self._process = None
+        self._message_queue = None
+        self._cancel_event = None
+        self._task_key = ""
+        self._last_job_id = ""
+        self._terminal = None
+        self._cancel_deadline = None
+        self._kill_deadline = None
+        self._forced = False
+
+
 class AppBackend(QObject):
     """Implementation of ``qml/BACKEND_CONTRACT.md``."""
 
@@ -199,6 +420,7 @@ class AppBackend(QObject):
         self._history_items: list[dict[str, Any]] = []
         self._queue: deque[_QueuedTask] = deque()
         self._current_task: _QueuedTask | None = None
+        self._resume_confirmations: set[str] = set()
         self._shutting_down = False
 
         self._settings_store = qsettings if qsettings is not None else QSettings()
@@ -222,18 +444,45 @@ class AppBackend(QObject):
             else (self._help.first_anchor if self._help else "primeiros-passos")
         )
 
+        self._uses_process_executor = pipeline is None
         self._pipeline = pipeline or self._default_pipeline(
             data_root=data_root,
             default_output_root=default_output_root,
         )
+        self._process_executor: _ProcessExecutor | None = None
+        if self._uses_process_executor:
+            media_root = self._pipeline.media.work_root
+            if media_root is None:
+                media_root = self._pipeline.job_store.root.parent / "cache" / "media"
+            self._process_executor = _ProcessExecutor(
+                PipelineProcessConfig(
+                    job_root=self._pipeline.job_store.root,
+                    media_work_root=media_root,
+                    default_output_root=self._pipeline.default_output_root,
+                ),
+                parent=self,
+            )
+            self._process_executor.progress.connect(self._on_progress)
+            self._process_executor.succeeded.connect(self._on_process_success)
+            self._process_executor.failed.connect(self._on_failure)
+            self._process_executor.cancelled.connect(self._on_process_cancelled)
+            self._process_executor.forcedCancelled.connect(
+                self._on_forced_process_cancelled
+            )
+
         self._worker_thread = QThread()
-        self._worker_thread.setObjectName("transcription-worker")
+        self._worker_thread.setObjectName(
+            "credential-worker"
+            if self._uses_process_executor
+            else "transcription-worker"
+        )
         self._worker = _PipelineWorker(self._pipeline)
         self._worker.moveToThread(self._worker_thread)
-        self._runRequested.connect(
-            self._worker.run_task,
-            Qt.ConnectionType.QueuedConnection,
-        )
+        if not self._uses_process_executor:
+            self._runRequested.connect(
+                self._worker.run_task,
+                Qt.ConnectionType.QueuedConnection,
+            )
         self._credentialTestRequested.connect(
             self._worker.test_credential,
             Qt.ConnectionType.QueuedConnection,
@@ -421,10 +670,30 @@ class AppBackend(QObject):
     def cancelTranscription(self) -> None:  # noqa: N802
         cleared = len(self._queue)
         self._queue.clear()
-        if self._current_task and self._current_task.cancellation:
-            self._current_task.cancellation.cancel()
+        if self._current_task:
+            if self.activeJobState == "cancelling":
+                return
+            job_id = _durable_job_id(
+                self._active_job,
+                self._current_task.resume_job_id,
+                self._current_task.key,
+            )
+            if job_id:
+                request_cancel = getattr(self._pipeline, "request_cancel", None)
+                if callable(request_cancel):
+                    with suppress(JobStoreError, OSError, ValueError):
+                        request_cancel(job_id)
+            if self._process_executor is not None:
+                self._process_executor.cancel()
+            elif self._current_task.cancellation:
+                self._current_task.cancellation.cancel()
             active = dict(self._active_job)
-            active["detail"] = "Cancelamento solicitado; preservando as partes concluídas…"
+            active.update(
+                state="cancelling",
+                detail=(
+                    "Cancelando; preservando a transcrição e as partes concluídas…"
+                ),
+            )
             self._set_active_job(active)
         elif self._active_job.get("state") == "queued":
             active = dict(self._active_job)
@@ -484,6 +753,15 @@ class AppBackend(QObject):
         if manifest.status == JobStatus.COMPLETED and _manifest_output(manifest):
             self.openHistoryOutput(job_id)
             return
+        if _requires_paid_retry_confirmation(manifest):
+            if job_id not in self._resume_confirmations:
+                self._resume_confirmations.add(job_id)
+                self.toastRequested.emit(
+                    "A tentativa anterior pode ter sido cobrada. "
+                    "Clique em Retomar novamente para confirmar uma nova chamada."
+                )
+                return
+            self._resume_confirmations.discard(job_id)
         self._enqueue(
             _QueuedTask(
                 key=uuid.uuid4().hex,
@@ -595,20 +873,25 @@ class AppBackend(QObject):
 
     @Slot(result=bool)
     def shutdown(self) -> bool:
-        """Stop the worker, forcing it only as a bounded process-exit fallback.
+        """Stop every worker without leaving a live Qt thread behind.
 
-        Provider SDKs cannot always interrupt an HTTP request already in flight.
-        Cooperative cancellation gets five seconds; ``terminate`` is reserved
-        for application shutdown so a live ``QThread`` is never destroyed.
-        Atomic core writes keep a forced exit resumable.
+        Production pipeline work has its own disposable process. The Qt thread
+        only hosts credential validation and the injected executor used by unit
+        tests; terminating it remains an application-shutdown fallback.
         """
 
         if self._shutting_down:
-            return not self._worker_thread.isRunning()
+            process_stopped = (
+                self._process_executor is None
+                or not self._process_executor.running
+            )
+            return process_stopped and not self._worker_thread.isRunning()
         self._shutting_down = True
         self._queue.clear()
         if self._current_task and self._current_task.cancellation:
             self._current_task.cancellation.cancel()
+        if self._process_executor is not None:
+            self._process_executor.shutdown()
         self._worker_thread.requestInterruption()
         self._worker_thread.quit()
         if self._worker_thread.wait(_SHUTDOWN_GRACE_MS):
@@ -711,7 +994,13 @@ class AppBackend(QObject):
                 "provenance": "",
             }
         )
-        self._runRequested.emit(task)
+        if self._process_executor is not None:
+            try:
+                self._process_executor.start(task)
+            except BaseException as exc:
+                self._on_failure(task.key, _error_message(exc))
+        else:
+            self._runRequested.emit(task)
 
     @Slot(str, object)
     def _on_progress(self, key: str, value: dict[str, Any]) -> None:
@@ -721,6 +1010,25 @@ class AppBackend(QObject):
         snapshot["id"] = (
             snapshot.get("id") or self._current_task.resume_job_id or self._current_task.key
         )
+        job_id = _durable_job_id(
+            snapshot,
+            self._current_task.resume_job_id,
+            self._current_task.key,
+        )
+        if job_id:
+            try:
+                item = _manifest_to_ui(self._pipeline.job_store.load_job(job_id))
+            except (JobStoreError, OSError, ValueError):
+                item = {}
+            item.update(snapshot)
+            snapshot = item
+        if self.activeJobState == "cancelling":
+            snapshot.update(
+                state="cancelling",
+                detail=(
+                    "Cancelando; preservando a transcrição e as partes concluídas…"
+                ),
+            )
         self._set_active_job(snapshot)
         self._refresh_history()
 
@@ -745,26 +1053,62 @@ class AppBackend(QObject):
         self._finish_current()
 
     @Slot(str, str)
+    def _on_process_success(self, key: str, job_id: str) -> None:
+        if self._current_task is None or key != self._current_task.key:
+            return
+        try:
+            result = self._pipeline.load_result(job_id)
+        except BaseException as exc:
+            self._on_failure(key, _error_message(exc))
+            return
+        self._on_success(key, result)
+
+    @Slot(str, str)
     def _on_failure(self, key: str, message: str) -> None:
         if self._current_task is None or key != self._current_task.key:
             return
-        item = dict(self._active_job)
-        item.update(state="failed", detail=message)
+        item = self._current_manifest_item()
+        original_ready = bool(item.get("originalReady"))
+        detail = (
+            f"Transcrição pronta; a melhoria não foi concluída. {message}"
+            if original_ready
+            else message
+        )
+        item.update(state="failed", detail=detail)
         self._set_active_job(item)
-        self.toastRequested.emit(message)
+        self.toastRequested.emit(detail)
         self._finish_current()
 
     @Slot(str)
     def _on_cancelled(self, key: str) -> None:
         if self._current_task is None or key != self._current_task.key:
             return
-        item = dict(self._active_job)
+        item = self._current_manifest_item()
+        original_ready = bool(item.get("originalReady"))
         item.update(
             state="cancelled",
-            detail="Cancelada; você pode retomar pelo Histórico.",
+            detail=(
+                "Cancelada; a transcrição original está pronta. "
+                "Você pode retomar a melhoria pelo Histórico."
+                if original_ready
+                else "Cancelada; você pode retomar pelo Histórico."
+            ),
         )
         self._set_active_job(item)
         self._finish_current()
+
+    @Slot(str, str)
+    def _on_process_cancelled(self, key: str, _job_id: str) -> None:
+        self._on_cancelled(key)
+
+    @Slot(str, str)
+    def _on_forced_process_cancelled(self, key: str, job_id: str) -> None:
+        if self._current_task is None or key != self._current_task.key:
+            return
+        if job_id:
+            with suppress(JobStoreError, OSError, ValueError):
+                self._pipeline.mark_stalled_cancelled(job_id)
+        self._on_cancelled(key)
 
     @Slot(str, bool, str)
     def _on_credential_finished(
@@ -782,6 +1126,30 @@ class AppBackend(QObject):
             QTimer.singleShot(0, self._start_next)
         else:
             self._set_busy(False)
+
+    def _current_manifest_item(self) -> dict[str, Any]:
+        item = dict(self._active_job)
+        if self._current_task is None:
+            return item
+        job_id = _durable_job_id(
+            item,
+            self._current_task.resume_job_id,
+            self._current_task.key,
+        )
+        if not job_id:
+            return item
+        try:
+            persisted = _manifest_to_ui(self._pipeline.job_store.load_job(job_id))
+        except (JobStoreError, OSError, ValueError):
+            return item
+        persisted.update(
+            {
+                key: value
+                for key, value in item.items()
+                if key not in {"outputPaths", "outputGroups", "primaryOutput"}
+            }
+        )
+        return persisted
 
     def _set_active_job(self, value: dict[str, Any]) -> None:
         previous_state = self.activeJobState
@@ -819,17 +1187,20 @@ class AppBackend(QObject):
             self.historyChanged.emit()
 
     def _recover_interrupted_jobs(self) -> tuple[str, ...]:
-        interrupted: list[str] = []
+        safe_to_auto_resume: list[str] = []
         for manifest in self._pipeline.list_jobs():
             if manifest.status not in {JobStatus.PENDING, JobStatus.RUNNING}:
                 continue
-            self._pipeline.job_store.set_status(
-                manifest.job_id,
-                JobStatus.PAUSED,
-                message="Interrompida quando o aplicativo foi fechado.",
-            )
-            interrupted.append(manifest.job_id)
-        return tuple(interrupted)
+            if manifest.status == JobStatus.PENDING:
+                self._pipeline.job_store.set_status(
+                    manifest.job_id,
+                    JobStatus.PAUSED,
+                    message="Interrompida antes de iniciar.",
+                )
+                safe_to_auto_resume.append(manifest.job_id)
+            else:
+                self._pipeline.mark_interrupted(manifest.job_id)
+        return tuple(safe_to_auto_resume)
 
     def _auto_resume(self, job_ids: tuple[str, ...]) -> None:
         for job_id in reversed(job_ids):
@@ -890,6 +1261,18 @@ def _manifest_to_ui(manifest: JobManifest) -> dict[str, Any]:
             summary = raw_forecast
     state = _ui_status(manifest.status)
     stage = str(manifest.metadata.get("pipeline_stage") or "")
+    original_ready = bool(manifest.metadata.get("original_ready")) and bool(
+        output_groups.get("original") or output_groups.get("captions")
+    )
+    improved_ready = bool(output_groups.get("improved"))
+    if not bool(manifest.settings.get("improve_with_ai", False)):
+        improvement_state = "not_requested"
+    elif improved_ready:
+        improvement_state = "ready"
+    elif stage == "improving":
+        improvement_state = "in_progress"
+    else:
+        improvement_state = "not_completed"
     return {
         "id": manifest.job_id,
         "title": str(manifest.metadata.get("source_name") or _display_source(manifest.source)),
@@ -904,13 +1287,18 @@ def _manifest_to_ui(manifest: JobManifest) -> dict[str, Any]:
         "modelLabel": model_label,
         "state": state,
         "stage": stage,
-        "progress": _overall_progress(manifest, stage),
+        "progress": overall_progress(manifest, stage),
         "completedParts": len(manifest.completed_chunks),
         "totalParts": len(manifest.chunks),
         "provenance": str(manifest.metadata.get("provenance") or ""),
         "outputPaths": output_paths,
         "outputGroups": output_groups,
         "primaryOutput": primary if Path(primary).is_file() else "",
+        "originalReady": original_ready,
+        "improvementState": improvement_state,
+        "remoteResultAmbiguous": bool(
+            manifest.metadata.get("remote_result_ambiguous")
+        ),
         "costLabel": format_cost_label(
             summary,
             in_progress=state not in {"completed", "failed", "cancelled", "paused"},
@@ -918,27 +1306,6 @@ def _manifest_to_ui(manifest: JobManifest) -> dict[str, Any]:
         "usageLabel": format_usage_label(summary),
         "improveWithAi": bool(manifest.settings.get("improve_with_ai", False)),
     }
-
-
-def _overall_progress(manifest: JobManifest, stage: str) -> float:
-    improve = bool(manifest.settings.get("improve_with_ai", False))
-    if manifest.status == JobStatus.COMPLETED:
-        return 1.0
-    if stage in {"exporting", "export_failed"}:
-        return 0.97
-    if stage == "improvement_complete":
-        return 0.95
-    if stage == "improving":
-        total = max(1, int(manifest.metadata.get("editorial_total") or 1))
-        completed = min(
-            total,
-            max(0, int(manifest.metadata.get("editorial_completed") or 0)),
-        )
-        return 0.65 + 0.30 * completed / total
-    if stage == "transcription_complete":
-        return 0.65 if improve else 0.93
-    scale = 0.65 if improve else 0.93
-    return min(scale, max(0.0, manifest.progress * scale))
 
 
 def _ui_status(status: JobStatus) -> str:
@@ -956,6 +1323,36 @@ def _manifest_output(manifest: JobManifest) -> Path | None:
         if path.is_file():
             return path
     return None
+
+
+def _durable_job_id(
+    item: Mapping[str, Any],
+    resume_job_id: str | None,
+    transient_key: str,
+) -> str:
+    candidate = str(item.get("id") or resume_job_id or "")
+    return candidate if candidate and candidate != transient_key else ""
+
+
+def _requires_paid_retry_confirmation(manifest: JobManifest) -> bool:
+    if bool(manifest.metadata.get("remote_result_ambiguous")):
+        return True
+    raw_attempts = manifest.metadata.get("attempts", ())
+    if isinstance(raw_attempts, (list, tuple)) and any(
+        isinstance(item, Mapping)
+        and item.get("status") in {
+            "remote_ambiguous",
+            "rejected",
+            "cancel_requested",
+            "running",
+        }
+        for item in raw_attempts
+    ):
+        return True
+    raw_adjustments = manifest.metadata.get("cost_adjustments", ())
+    return isinstance(raw_adjustments, (list, tuple)) and any(
+        isinstance(item, Mapping) for item in raw_adjustments
+    )
 
 
 def _local_source(value: str) -> str:

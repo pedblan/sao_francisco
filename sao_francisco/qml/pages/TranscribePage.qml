@@ -201,14 +201,26 @@ Item {
         return labels[value] || ""
     }
 
-    function jobStatusLabel(value, stage) {
-        if (value === "running" && stage === "improving")
-            return "Melhorando o texto"
-        if (value === "running" && stage === "exporting")
+    function jobStatusLabel(value, stage, originalReady, improvementState) {
+        if (value === "cancelling")
+            return "Cancelando"
+        if (originalReady && improvementState === "in_progress")
+            return "Transcrição pronta · Melhorando texto"
+        if (originalReady && improvementState === "not_completed"
+                && (value === "failed" || value === "cancelled"
+                    || value === "paused"))
+            return "Transcrição pronta · Melhoria não concluída"
+        if (originalReady && improvementState === "ready")
+            return "Transcrição e texto melhorado prontos"
+        if (value === "running"
+                && (stage === "exporting_original"
+                    || stage === "exporting_improved"))
             return "Criando arquivos"
         if (value === "failed" && stage === "improving")
             return "Não foi possível melhorar"
-        if (value === "failed" && stage === "export_failed")
+        if (value === "failed"
+                && (stage === "original_export_failed"
+                    || stage === "improved_export_failed"))
             return "Não foi possível exportar"
         const labels = {
             "preparing": "Preparando",
@@ -894,7 +906,9 @@ Item {
                     Components.StatusPill {
                         text: root.jobStatusLabel(
                                   String(root.activeJob.state || ""),
-                                  String(root.activeJob.stage || ""))
+                                  String(root.activeJob.stage || ""),
+                                  Boolean(root.activeJob.originalReady),
+                                  String(root.activeJob.improvementState || ""))
                         tone: root.jobTone(
                                   String(root.activeJob.state || ""))
                     }
@@ -948,8 +962,9 @@ Item {
                 ColumnLayout {
                     Layout.fillWidth: true
                     spacing: 10
-                    visible: root.activeJob.state === "completed"
-                             && root.activeJob.outputGroups
+                    visible: root.groupHasFiles("improved")
+                             || root.groupHasFiles("original")
+                             || root.groupHasFiles("captions")
 
                     Text {
                         visible: root.groupHasFiles("improved")
@@ -1056,14 +1071,19 @@ Item {
                     Components.AppButton {
                         visible: root.activeJob.state === "running"
                                  || root.activeJob.state === "preparing"
-                        text: "Cancelar"
+                                 || root.activeJob.state === "cancelling"
+                        enabled: root.activeJob.state !== "cancelling"
+                        text: root.activeJob.state === "cancelling"
+                              ? "Cancelando…" : "Cancelar"
                         variant: "ghost"
                         compact: true
                         onClicked: root.callBackend(
                                        "cancelTranscription", [])
                     }
                     Components.AppButton {
-                        visible: root.activeJob.state === "completed"
+                        visible: root.groupHasFiles("improved")
+                                 || root.groupHasFiles("original")
+                                 || root.groupHasFiles("captions")
                         text: "Abrir resultado"
                         compact: true
                         onClicked: root.callBackend(

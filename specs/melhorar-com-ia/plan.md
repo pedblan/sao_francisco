@@ -28,13 +28,15 @@
 - Dividir em limites naturais com IDs estáveis.
 - Enviar contexto mínimo sem permitir que ele reapareça na saída.
 - Persistir cada bloco de forma atômica.
-- Validar ordem, completude, duplicações e variação anormal de extensão.
+- Validar tecnicamente ordem, completude e duplicações.
+- Avaliar variação de extensão e fidelidade antes da liberação, sem guard semântico no
+  trabalho real.
 - Permitir retomar somente a etapa editorial.
 
 ## 5. Exportação
 
-- Bloquear a exportação até que transcrição e eventual melhoria estejam persistidas.
-- Exportar original, melhorado e legendas somente na etapa final.
+- Exportar original e legendas assim que a transcrição original estiver persistida.
+- Exportar o texto melhorado somente depois da montagem editorial.
 - Gerar DOCX e TXT melhorados sem marcações de tempo.
 - Manter SRT e VTT intocados.
 - Aplicar nomes seguros com os sufixos **transcrição** e **texto melhorado**.

@@ -7,8 +7,9 @@
 - [ ] Uma falha editorial nunca remove, renomeia nem invalida o original.
 - [ ] SRT e VTT não passam pelo modelo editorial.
 - [ ] O texto melhorado não contém marcações de tempo.
-- [ ] O fluxo observado é sempre transcrever ou obter, melhorar se solicitado e exportar.
-- [ ] Nenhum arquivo final é exportado enquanto uma melhoria solicitada estiver pendente.
+- [ ] O fluxo observado é sempre transcrever ou obter, exportar o original, melhorar se
+      solicitado e exportar o texto melhorado.
+- [ ] Os arquivos originais ficam disponíveis enquanto a melhoria estiver pendente.
 
 ## Fidelidade editorial
 
@@ -66,7 +67,7 @@ Para cada amostra:
 - [ ] Retomar envia somente os blocos restantes.
 - [ ] Alterar preços ou catálogo depois da pausa não recalcula custos já persistidos.
 - [ ] Um bloco vazio, ausente, duplicado ou fora de ordem impede a conclusão editorial.
-- [ ] Uma falha editorial não inicia a exportação.
+- [ ] Uma falha editorial não remove nem invalida a exportação original.
 - [ ] Uma falha de exportação é retomada sem chamada de transcrição ou melhoria.
 
 ## Arquivos
@@ -75,8 +76,8 @@ Para cada amostra:
 - [ ] TXT original e melhorado usam UTF-8 e nomes distintos.
 - [ ] Somente formatos selecionados são produzidos.
 - [ ] Sem melhoria, a exportação começa somente após a transcrição persistida.
-- [ ] Com melhoria, original e melhorado são exportados somente depois da montagem
-      editorial persistida.
+- [ ] Com melhoria, o original é exportado antes da primeira chamada editorial.
+- [ ] O melhorado é exportado somente depois da montagem editorial persistida.
 - [ ] Tempos opcionais aparecem somente no original.
 - [ ] Falantes permanecem legíveis nas duas versões.
 - [ ] Colisões de nome recebem numeração sem sobrescrever.
@@ -102,8 +103,7 @@ Para cada amostra:
 - [ ] A nova altura não impede alcançar o último controle da página.
 - [ ] O progresso distingue transcrição e melhoria em palavras cotidianas.
 - [ ] Original, melhorado e legendas aparecem agrupados sem excesso de cartões.
-- [ ] Falha editorial apresenta transcrição preservada, ausência de arquivos finais e uma
-      ação válida de retomada.
+- [ ] Falha editorial apresenta os arquivos originais e uma ação válida de retomada.
 - [ ] Falha de exportação apresenta ação para repetir somente a exportação.
 - [ ] Nenhum ID de modelo, prompt, esforço ou tamanho de bloco aparece na GUI.
 - [ ] Todas as rotas carregam no tamanho padrão e mínimo.
@@ -116,7 +116,7 @@ As fixtures devem cobrir respostas:
 
 - válidas;
 - vazias;
-- recusadas;
+- com diferenças semânticas que continuam tecnicamente utilizáveis;
 - muito maiores ou menores que a entrada;
 - com repetição de contexto;
 - com IDs ausentes ou duplicados;
@@ -148,7 +148,7 @@ O build fica bloqueado se houver:
 - SRT/VTT ou tempos alterados;
 - custo editorial ausente do total;
 - retomada que reenvie blocos concluídos;
-- exportação iniciada antes da conclusão das etapas solicitadas;
+- exportação melhorada iniciada antes da montagem editorial;
 - falha de exportação que repita uma chamada paga;
 - detalhes técnicos visíveis na GUI;
 - clipping, rolagem insuficiente ou ação encoberta.

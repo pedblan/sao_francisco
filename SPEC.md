@@ -137,3 +137,7 @@ O subtítulo da marca é **Abençoe sua transcrição**.
 - [Requisitos de Melhorar com IA](specs/melhorar-com-ia/requirements.md)
 - [Plano de implementação de Melhorar com IA](specs/melhorar-com-ia/plan.md)
 - [Validação de Melhorar com IA](specs/melhorar-com-ia/validation.md)
+- [Cancelamento e melhoria não bloqueante](specs/cancelamento-e-recusas-editoriais/spec.md)
+- [Requisitos de cancelamento e melhoria não bloqueante](specs/cancelamento-e-recusas-editoriais/requirements.md)
+- [Plano de cancelamento e melhoria não bloqueante](specs/cancelamento-e-recusas-editoriais/plan.md)
+- [Validação de cancelamento e melhoria não bloqueante](specs/cancelamento-e-recusas-editoriais/validation.md)

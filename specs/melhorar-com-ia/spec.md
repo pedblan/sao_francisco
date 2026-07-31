@@ -1,6 +1,6 @@
 # Especificação — Melhorar com IA
 
-**Estado:** implementado; validação automatizada concluída
+**Estado:** implementado; refinado por `cancelamento-e-recusas-editoriais`
 **Branch:** `estimar-custos`
 **Referência de modelos:** 28 de julho de 2026
 
@@ -31,9 +31,8 @@ personalizadas.
 
 ## Resultado
 
-A transcrição original é sempre concluída e persistida primeiro. Os arquivos são
-exportados somente depois que todas as etapas solicitadas estiverem concluídas. Para cada
-DOCX ou TXT selecionado, a melhoria gera uma segunda versão:
+A transcrição original é sempre concluída, persistida e exportada primeiro. Para cada
+DOCX ou TXT selecionado, a melhoria gera depois uma segunda versão:
 
 - `Título — transcrição.docx`
 - `Título — texto melhorado.docx`
@@ -56,15 +55,15 @@ A tela de resultado agrupa os arquivos sob rótulos cotidianos:
 
 1. Obter ou transcrever o conteúdo.
 2. Reunir e persistir a transcrição original.
-3. Se a opção estiver marcada, dividir o texto em blocos editoriais seguros.
-4. Melhorar e persistir cada bloco.
-5. Reunir e persistir os blocos sem lacunas nem repetições.
-6. Exportar, em uma única etapa final, todos os arquivos originais e melhorados
-   solicitados.
+3. Exportar todos os formatos originais solicitados.
+4. Se a opção estiver marcada, dividir o texto em blocos editoriais seguros.
+5. Melhorar e persistir cada bloco.
+6. Reunir e persistir os blocos sem lacunas nem repetições.
+7. Exportar os arquivos adicionais de texto melhorado.
 
 Se a etapa editorial for cancelada ou falhar, a transcrição original continua concluída.
 O Histórico permite retomar somente a melhoria, sem baixar novamente a mídia nem reenviar
-o áudio. Nenhum arquivo final é exportado antes da conclusão da melhoria solicitada.
+o áudio. Os arquivos originais permanecem disponíveis durante e depois dessa falha.
 
 Se a exportação falhar, o Histórico permite repetir somente a exportação. Transcrição,
 legendas normalizadas, melhoria, custos e tokens já persistidos não são recalculados nem
@@ -101,6 +100,10 @@ ser enviado apenas para continuidade; o modelo devolve exclusivamente o bloco-al
 A montagem valida a presença e a ordem de todos os blocos. Um bloco ausente, duplicado ou
 fora de ordem impede que a versão melhorada seja declarada concluída, mas não afeta a
 transcrição original.
+
+O aplicativo não tenta certificar fidelidade semântica em tempo de execução. Números,
+falantes, marcações e variação de extensão continuam no contrato do prompt e na avaliação
+de versão; toda resposta textual não vazia é aceita. O original separado é a referência.
 
 ## Escolha interna de modelos
 

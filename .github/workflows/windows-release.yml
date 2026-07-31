@@ -26,10 +26,17 @@ jobs:
         shell: pwsh
         run: ./scripts/build_windows_x64.ps1 -PythonBin python
 
+      - name: Obter a versão
+        id: package-version
+        shell: pwsh
+        run: |
+          $Version = python -c "from sao_francisco import __version__; print(__version__)"
+          "version=$Version" >> $env:GITHUB_OUTPUT
+
       - name: Guardar o ZIP
         uses: actions/upload-artifact@v6
         with:
-          name: Sao-Francisco-0.1.1-windows-x64
-          path: dist/Sao-Francisco-0.1.1-windows-x64.zip
+          name: Sao-Francisco-${{ steps.package-version.outputs.version }}-windows-x64
+          path: dist/Sao-Francisco-${{ steps.package-version.outputs.version }}-windows-x64.zip
           if-no-files-found: error
           retention-days: 7

@@ -133,23 +133,20 @@ def test_editorial_plan_is_stable_bounded_and_assembled_once() -> None:
     assert assembled.count("Parágrafo") == 12
 
 
-def test_editorial_validation_preserves_numbers_speakers_and_uncertainty() -> None:
+def test_editorial_runtime_validation_accepts_nonempty_model_edits() -> None:
     original = "Ana: Foram 27 casos em 28/07/2026. [inaudível]"
     assert validate_editorial_result(
         original,
         "Ana: Foram 27 casos em 28/07/2026.\n\n[inaudível]",
     )
+    assert validate_editorial_result(
+        original,
+        "Bia: Foram 28 casos.",
+        protected_speakers=("Ana",),
+    ) == "Bia: Foram 28 casos."
 
-    with pytest.raises(EditorialValidationError, match="números"):
-        validate_editorial_result(original, "Ana: Foram 28 casos em 28/07/2026. [inaudível]")
-    with pytest.raises(EditorialValidationError, match="falantes"):
-        validate_editorial_result(
-            original,
-            "Bia: Foram 27 casos em 28/07/2026. [inaudível]",
-            protected_speakers=("Ana",),
-        )
-    with pytest.raises(EditorialValidationError, match="inaudível"):
-        validate_editorial_result(original, "Ana: Foram 27 casos em 28/07/2026.")
+    with pytest.raises(EditorialValidationError, match="vazio"):
+        validate_editorial_result(original, " \n ")
 
 
 def test_editorial_validation_allows_punctuation_around_unchanged_numbers() -> None:
