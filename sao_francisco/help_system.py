@@ -30,9 +30,16 @@ class HelpSection:
 
 
 class HelpDocument:
-    def __init__(self, markdown: str) -> None:
+    def __init__(self, markdown: str, *, anchors: tuple[str, ...] | None = None) -> None:
         self.markdown = markdown
         self.title, self.sections = _parse(markdown)
+        if anchors is not None:
+            if len(anchors) != len(self.sections) or len(set(anchors)) != len(anchors):
+                raise HelpContentError("Invalid localized Help section mapping.")
+            self.sections = tuple(
+                HelpSection(section.title, anchor, section.markdown, section.searchable_text)
+                for section, anchor in zip(self.sections, anchors, strict=True)
+            )
         self._by_anchor = {section.anchor: section for section in self.sections}
 
     @classmethod

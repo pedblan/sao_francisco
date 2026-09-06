@@ -1,5 +1,13 @@
 # Textos do aplicativo — São Francisco
 
+> [!IMPORTANT]
+> Este arquivo conserva um resumo histórico dos textos da versão 0.1.2. O inventário
+> completo da GUI multilíngue implementada está em [TEXTOS_DA_GUI_ATUAL.md](TEXTOS_DA_GUI_ATUAL.md).
+> A direção vigente é a
+> [distribuição comercial Mac/Windows](specs/distribuicao-comercial/spec.md), mantendo MIT.
+> O [rascunho editorial](specs/versao-app-store/textos-gui-pt-BR.md) foi preservado como histórico;
+> não representa os textos efetivamente implementados nem bloqueia as traduções autorizadas.
+
 Inventário editorial para revisar a linguagem sem precisar procurar nos arquivos QML.
 `sao_francisco/AJUDA.md` continua sendo a fonte integral da Ajuda.
 

@@ -20,7 +20,3 @@ licenças próprias.
   credenciais no macOS Keychain.
 - **Jost e Source Sans 3:** SIL Open Font License 1.1. Os textos estão em
   `sao_francisco/licenses/fonts/`.
-
-Antes de publicar um instalador, gere um inventário do artefato final. Este
-arquivo não substitui os textos completos das licenças nem obrigações de
-fornecimento de código-fonte.

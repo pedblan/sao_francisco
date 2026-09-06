@@ -58,6 +58,7 @@ from .credentials import (
     save_secret,
 )
 from .help_system import HelpContentError, HelpDocument
+from .i18n import LANGUAGES, Localizer, normalize_locale, translated_help
 from .pipeline import (
     PipelineError,
     PipelineOptions,
@@ -391,6 +392,8 @@ class AppBackend(QObject):
     outputFolderChanged = Signal()
     historyItemsChanged = Signal()
     settingsChanged = Signal()
+    interfaceLanguageChanged = Signal()
+    interfaceLanguageAboutToChange = Signal()
     helpAnchorChanged = Signal()
     helpContentChanged = Signal()
 
@@ -424,6 +427,10 @@ class AppBackend(QObject):
         self._shutting_down = False
 
         self._settings_store = qsettings if qsettings is not None else QSettings()
+        self.localizer = Localizer(str(self._settings_store.value(
+            "preferences/interfaceLanguage", "en-US", type=str
+        )))
+        self._injected_help = help_document is not None
         self._output_folder = str(
             self._settings_store.value("preferences/outputFolder", "", type=str)
         )
@@ -434,8 +441,8 @@ class AppBackend(QObject):
             self._help = help_document
         else:
             try:
-                self._help = HelpDocument.from_path(Path(__file__).with_name("AJUDA.md"))
-            except HelpContentError as exc:
+                self._help = self._localized_help()
+            except (HelpContentError, OSError, UnicodeError) as exc:
                 self._help = None
                 self._help_error = str(exc)
         self._help_anchor = (
@@ -516,7 +523,59 @@ class AppBackend(QObject):
     def appVersion(self) -> str:  # noqa: N802
         return __version__
 
-    @Property(str, constant=True)
+    @Property(str, notify=interfaceLanguageChanged)
+    def interfaceLanguage(self) -> str:  # noqa: N802
+        return self.localizer.locale
+
+    @Property(bool, notify=interfaceLanguageChanged)
+    def rightToLeft(self) -> bool:  # noqa: N802
+        return self.localizer.locale == "ar"
+
+    @Property("QVariantList", constant=True)
+    def interfaceLanguages(self) -> list[dict[str, str]]:  # noqa: N802
+        return [{"id": code, "name": name} for code, name in LANGUAGES]
+
+    @Slot(str, result=str)
+    def translateMessage(self, source: str) -> str:  # noqa: N802
+        return self.localizer.message(source)
+
+    @Slot(str, result=bool)
+    def setInterfaceLanguage(self, requested: str) -> bool:  # noqa: N802
+        selected = normalize_locale(requested)
+        if selected == self.interfaceLanguage:
+            return True
+        try:
+            translated_document = (
+                self._help if self._injected_help else self._localized_help(selected)
+            )
+        except (HelpContentError, OSError, UnicodeError):
+            self.toastRequested.emit(self.localizer.text(
+                "A Ajuda integrada não pôde ser carregada. "
+                "Reinstale o aplicativo para restaurar o manual."
+            ))
+            return False
+        self._settings_store.setValue("preferences/interfaceLanguage", selected)
+        self._settings_store.sync()
+        if self._settings_store.status() != QSettings.Status.NoError:
+            return False
+        self.interfaceLanguageAboutToChange.emit()
+        self.localizer = Localizer(selected)
+        self._help = translated_document
+        self.interfaceLanguageChanged.emit()
+        self.helpContentChanged.emit()
+        self.activeJobChanged.emit()
+        self.historyItemsChanged.emit()
+        self.historyChanged.emit()
+        return True
+
+    def _localized_help(self, locale: str | None = None) -> HelpDocument:
+        original = HelpDocument.from_path(Path(__file__).with_name("AJUDA.md"))
+        return HelpDocument(
+            translated_help(locale or self.interfaceLanguage),
+            anchors=tuple(section.anchor for section in original.sections),
+        )
+
+    @Property(str, notify=interfaceLanguageChanged)
     def thirdPartyNoticesMarkdown(self) -> str:  # noqa: N802
         package = Path(__file__).resolve().parent
         candidates = (
@@ -525,11 +584,13 @@ class AppBackend(QObject):
         )
         target = next((path for path in candidates if path.is_file()), None)
         if target is None:
-            return "# Avisos de terceiros\n\nOs avisos não foram encontrados neste pacote."
+            return self.localizer.text(
+                "# Avisos de terceiros\n\nOs avisos não foram encontrados neste pacote."
+            )
         try:
-            return target.read_text(encoding="utf-8")
+            return self.localizer.notices(target.read_text(encoding="utf-8"))
         except (OSError, UnicodeError):
-            return "# Avisos de terceiros\n\nOs avisos não puderam ser lidos."
+            return self.localizer.text("# Avisos de terceiros\n\nOs avisos não puderam ser lidos.")
 
     @Property(str, notify=activeJobStateChanged)
     def activeJobState(self) -> str:  # noqa: N802
@@ -541,7 +602,7 @@ class AppBackend(QObject):
 
     @Property("QVariantMap", notify=activeJobChanged)
     def activeJob(self) -> dict[str, Any]:  # noqa: N802
-        return dict(self._active_job)
+        return self.localizer.presentation(self._active_job)
 
     @Property("QVariantList", notify=pendingSourcesChanged)
     def pendingSources(self) -> list[str]:  # noqa: N802
@@ -553,7 +614,7 @@ class AppBackend(QObject):
 
     @Property("QVariantList", notify=historyItemsChanged)
     def historyItems(self) -> list[dict[str, Any]]:  # noqa: N802
-        return [dict(item) for item in self._history_items]
+        return [self.localizer.presentation(item) for item in self._history_items]
 
     @Property("QVariantMap", notify=settingsChanged)
     def settings(self) -> dict[str, Any]:
@@ -617,7 +678,11 @@ class AppBackend(QObject):
             if selected == "openai"
             else models_for_provider("gemini")
         )
-        return [item.to_ui_dict() for item in models]
+        return [
+            {**self.localizer.presentation(item.to_ui_dict()),
+             "name": self.localizer.text(item.name)}
+            for item in models
+        ]
 
     @Slot("QVariantList")
     def setPendingSources(self, urls: list[Any]) -> None:  # noqa: N802
@@ -637,7 +702,7 @@ class AppBackend(QObject):
     def chooseOutputFolder(self) -> str:  # noqa: N802
         selected = QFileDialog.getExistingDirectory(
             None,
-            "Escolher pasta de saída",
+            self.localizer.text("Escolher pasta de saída"),
             self._output_folder or _documents_location(),
         )
         if selected and selected != self._output_folder:
@@ -727,7 +792,7 @@ class AppBackend(QObject):
     @Slot(result="QVariantList")
     def history(self) -> list[dict[str, Any]]:
         self._refresh_history()
-        return [dict(item) for item in self._history_items]
+        return [self.localizer.presentation(item) for item in self._history_items]
 
     @Slot(str)
     def openHistoryOutput(self, job_id: str) -> None:  # noqa: N802
@@ -859,9 +924,10 @@ class AppBackend(QObject):
     def helpSection(self, anchor: str) -> dict[str, str]:  # noqa: N802
         if self._help is None:
             return {
-                "title": "Ajuda indisponível",
+                "title": self.localizer.text("Ajuda indisponível"),
                 "anchor": "primeiros-passos",
-                "markdown": f"## Ajuda indisponível\n\n{self._help_error}",
+                "markdown": self.localizer.text("## Ajuda indisponível\n\n")
+                + self.localizer.text(self._help_error),
             }
         selected = anchor if self._help.has_anchor(anchor) else "primeiros-passos"
         section = self._help.section(selected)
@@ -1221,9 +1287,14 @@ class AppBackend(QObject):
         )
 
     def _settings_map(self) -> dict[str, Any]:
+        def localized_mask(provider: str) -> str:
+            masked = _masked_credential(provider)
+            prefix, separator, source = masked.partition(" — ")
+            return prefix + separator + self.localizer.text(source) if separator else masked
+
         return {
-            "openAiKeyMasked": _masked_credential("openai"),
-            "geminiKeyMasked": _masked_credential("gemini"),
+            "openAiKeyMasked": localized_mask("openai"),
+            "geminiKeyMasked": localized_mask("gemini"),
             "outputFolder": self._output_folder,
             "notifyOnCompletion": self._preference_bool("notifyOnCompletion", True),
             "resumeInterruptedJobs": self._preference_bool("resumeInterruptedJobs", True),

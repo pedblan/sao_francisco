@@ -41,6 +41,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             QRect,
             QSettings,
             QStandardPaths,
+            Qt,
             QTimer,
             QUrl,
         )
@@ -51,12 +52,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         from PySide6.QtWidgets import QApplication, QMessageBox
     except ImportError:
         _report_startup_error(
-            "São Francisco requer PySide6. Reinstale o aplicativo para restaurar o Qt 6."
+            "São Francisco requires PySide6. Reinstall the application to restore Qt 6."
         )
         return 2
 
     from . import __version__
     from .backend import AppBackend
+    from .qt_i18n import ProductTranslator
 
     QCoreApplication.setOrganizationName("São Francisco")
     QCoreApplication.setOrganizationDomain("sao-francisco.local")
@@ -81,13 +83,26 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     settings = QSettings()
     backend = AppBackend(qsettings=settings, parent=application)
+
+    translator = ProductTranslator(lambda: backend.localizer, application)
+    application.installTranslator(translator)
     engine = QQmlApplicationEngine()
+
+    def retranslate() -> None:
+        application.setLayoutDirection(
+            Qt.LayoutDirection.RightToLeft if backend.rightToLeft
+            else Qt.LayoutDirection.LeftToRight
+        )
+        engine.retranslate()
+
+    backend.interfaceLanguageChanged.connect(retranslate)
+    retranslate()
     engine.rootContext().setContextProperty("appBackend", backend)
     engine.load(QUrl.fromLocalFile(str(package_root / "qml" / "Main.qml")))
     roots = engine.rootObjects()
     if not roots:
         backend.shutdown()
-        message = "Não foi possível carregar a interface do São Francisco."
+        message = backend.localizer.text("Não foi possível carregar a interface do São Francisco.")
         QMessageBox.critical(None, "São Francisco", message)
         _report_startup_error(message)
         return 1

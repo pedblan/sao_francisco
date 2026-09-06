@@ -49,7 +49,7 @@ Item {
             return
         }
         results = []
-        loadingError = "A Ajuda integrada não pôde ser carregada. Reinstale o aplicativo para restaurar o manual."
+        loadingError = qsTranslate("App", "A Ajuda integrada não pôde ser carregada. Reinstale o aplicativo para restaurar o manual.")
     }
 
     function sectionMarkdown(anchor) {
@@ -61,8 +61,8 @@ Item {
                 return String(backendSection.markdown)
         }
         return loadingError.length > 0
-               ? "## Ajuda indisponível\n\n" + loadingError
-               : "## Carregando\n\nO manual está sendo preparado."
+               ? qsTranslate("App", "## Ajuda indisponível\n\n") + loadingError
+               : qsTranslate("App", "## Carregando\n\nO manual está sendo preparado.")
     }
 
     function selectAnchor(anchor) {
@@ -111,7 +111,7 @@ Item {
         } else if (value.indexOf("https://") === 0) {
             callBackend("openExternalUrl", [value])
         } else if (shell) {
-            shell.showToast("Este endereço não pode ser aberto com segurança.")
+            shell.showToast(qsTranslate("App", "Este endereço não pode ser aberto com segurança."))
         }
     }
 
@@ -160,7 +160,7 @@ Item {
 
                 Text {
                     Layout.fillWidth: true
-                    text: "Ajuda"
+                    text: qsTranslate("App", "Ajuda")
                     color: App.Theme.text
                     font.family: App.Theme.displayFont
                     font.pixelSize: 23
@@ -169,7 +169,7 @@ Item {
                 }
                 Text {
                     Layout.fillWidth: true
-                    text: "Orientações claras para cada etapa da transcrição."
+                    text: qsTranslate("App", "Orientações claras para cada etapa da transcrição.")
                     color: App.Theme.textMuted
                     font.family: App.Theme.uiFont
                     font.pixelSize: App.Theme.bodySize
@@ -181,13 +181,13 @@ Item {
                     id: helpSearch
                     Layout.fillWidth: true
                     implicitHeight: 38
-                    placeholderText: "Buscar na ajuda"
+                    placeholderText: qsTranslate("App", "Buscar na ajuda")
                     font.family: App.Theme.uiFont
                     font.pixelSize: App.Theme.bodySize
                     leftPadding: 12
                     rightPadding: 12
                     selectByMouse: true
-                    Accessible.name: "Buscar na Ajuda"
+                    Accessible.name: qsTranslate("App", "Buscar na Ajuda")
                     background: Rectangle {
                         radius: App.Theme.radius
                         color: App.Theme.surface
@@ -202,11 +202,9 @@ Item {
                 Text {
                     Layout.fillWidth: true
                     text: helpSearch.text.length > 0
-                          ? root.results.length
-                            + (root.results.length === 1
-                               ? " resultado"
-                               : " resultados")
-                          : "TÓPICOS"
+                          ? qsTranslate("App", "Resultados: {count}")
+                            .replace("{count}", root.results.length)
+                          : qsTranslate("App", "TÓPICOS")
                     color: App.Theme.textSoft
                     font.family: App.Theme.uiFont
                     font.pixelSize: 9
@@ -226,7 +224,7 @@ Item {
                     spacing: 3
                     model: root.results
                     activeFocusOnTab: true
-                    Accessible.name: "Tópicos da Ajuda"
+                    Accessible.name: qsTranslate("App", "Tópicos da Ajuda")
                     boundsBehavior: Flickable.StopAtBounds
                     Keys.onPressed: event => root.handleScrollKey(
                                         event, topicList)
@@ -257,8 +255,8 @@ Item {
                         Accessible.name: String(modelData.title)
                         Accessible.description: root.selectedAnchor
                                                 === modelData.anchor
-                                                ? "Tópico selecionado"
-                                                : "Abrir tópico da Ajuda"
+                                                ? qsTranslate("App", "Tópico selecionado")
+                                                : qsTranslate("App", "Abrir tópico da Ajuda")
                         onClicked: root.selectAnchor(
                                        String(modelData.anchor))
 
@@ -323,7 +321,7 @@ Item {
                     visible: root.results.length === 0
                              && helpSearch.text.length > 0
                     Layout.fillWidth: true
-                    text: "Nenhum tópico encontrado. Tente palavras mais curtas."
+                    text: qsTranslate("App", "Nenhum tópico encontrado. Tente palavras mais curtas.")
                     color: App.Theme.textMuted
                     font.family: App.Theme.uiFont
                     font.pixelSize: 12
@@ -354,7 +352,7 @@ Item {
             flickableDirection: Flickable.VerticalFlick
             boundsBehavior: Flickable.StopAtBounds
             activeFocusOnTab: true
-            Accessible.name: "Artigo da Ajuda"
+            Accessible.name: qsTranslate("App", "Artigo da Ajuda")
 
             Keys.onPressed: event => root.handleScrollKey(
                                 event, articleScroll)
@@ -417,7 +415,7 @@ Item {
                                 spacing: 9
                                 Text {
                                     Layout.fillWidth: true
-                                    text: "Comece com tranquilidade"
+                                    text: qsTranslate("App", "Comece com tranquilidade")
                                     color: App.Theme.text
                                     font.family: App.Theme.displayFont
                                     font.pixelSize: 20
@@ -426,7 +424,7 @@ Item {
                                 }
                                 Text {
                                     Layout.fillWidth: true
-                                    text: "A Ajuda explica cada escolha, inclusive chaves, custos, vídeos longos e retomada."
+                                    text: qsTranslate("App", "A Ajuda explica cada escolha, inclusive chaves, custos, vídeos longos e retomada.")
                                     color: App.Theme.textMuted
                                     font.family: App.Theme.uiFont
                                     font.pixelSize: App.Theme.bodySize

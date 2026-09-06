@@ -8,6 +8,7 @@ import "../components" as Components
 
 Item {
     id: root
+    property string savedStateFilter: "all"
 
     property var shell: null
     property var historyItems: []
@@ -64,33 +65,33 @@ Item {
         const stage = String(item.stage || "")
         if (Boolean(item.originalReady)
                 && String(item.improvementState || "") === "in_progress")
-            return "Transcrição pronta · Melhorando texto"
+            return qsTranslate("App", "Transcrição pronta · Melhorando texto")
         if (Boolean(item.originalReady)
                 && String(item.improvementState || "") === "not_completed"
                 && (value === "failed" || value === "cancelled"
                     || value === "paused"))
-            return "Transcrição pronta · Melhoria não concluída"
+            return qsTranslate("App", "Transcrição pronta · Melhoria não concluída")
         if (Boolean(item.originalReady)
                 && String(item.improvementState || "") === "ready")
-            return "Transcrição e texto melhorado prontos"
+            return qsTranslate("App", "Transcrição e texto melhorado prontos")
         if (value === "running"
                 && (stage === "exporting_original"
                     || stage === "exporting_improved"))
-            return "Criando arquivos"
+            return qsTranslate("App", "Criando arquivos")
         if (value === "failed" && stage === "improving")
-            return "Melhoria interrompida"
+            return qsTranslate("App", "Melhoria interrompida")
         if (value === "failed" && stage === "export_failed")
-            return "Exportação interrompida"
+            return qsTranslate("App", "Exportação interrompida")
         const labels = {
-            "queued": "Na fila",
-            "preparing": "Preparando",
-            "running": "Em andamento",
-            "paused": "Pausada",
-            "completed": "Concluída",
-            "failed": "Falhou",
-            "cancelled": "Cancelada"
+            "queued": qsTranslate("App", "Na fila"),
+            "preparing": qsTranslate("App", "Preparando"),
+            "running": qsTranslate("App", "Em andamento"),
+            "paused": qsTranslate("App", "Pausada"),
+            "completed": qsTranslate("App", "Concluída"),
+            "failed": qsTranslate("App", "Falhou"),
+            "cancelled": qsTranslate("App", "Cancelada")
         }
-        return labels[value] || "Desconhecido"
+        return labels[value] || qsTranslate("App", "Desconhecido")
     }
 
     function stateTone(value) {
@@ -105,10 +106,10 @@ Item {
 
     function provenanceLabel(value) {
         const labels = {
-            "existing_captions": "Legenda existente",
-            "author_captions": "Legendas do autor",
-            "automatic_captions": "Legendas automáticas",
-            "audio_transcription": "Áudio transcrito"
+            "existing_captions": qsTranslate("App", "Legenda existente"),
+            "author_captions": qsTranslate("App", "Legendas do autor"),
+            "automatic_captions": qsTranslate("App", "Legendas automáticas"),
+            "audio_transcription": qsTranslate("App", "Áudio transcrito")
         }
         return labels[value] || ""
     }
@@ -148,8 +149,8 @@ Item {
 
         Components.PageHeader {
             Layout.fillWidth: true
-            title: "Histórico"
-            description: "Acompanhe tarefas, retome transcrições interrompidas e abra os arquivos produzidos."
+            title: qsTranslate("App", "Histórico")
+            description: qsTranslate("App", "Acompanhe tarefas, retome transcrições interrompidas e abra os arquivos produzidos.")
         }
 
         RowLayout {
@@ -160,13 +161,13 @@ Item {
                 id: historySearch
                 Layout.fillWidth: true
                 implicitHeight: 38
-                placeholderText: "Buscar por arquivo, endereço ou modelo"
+                placeholderText: qsTranslate("App", "Buscar por arquivo, endereço ou modelo")
                 selectByMouse: true
                 leftPadding: 13
                 rightPadding: 13
                 font.family: App.Theme.uiFont
                 font.pixelSize: App.Theme.bodySize
-                Accessible.name: "Buscar no histórico"
+                Accessible.name: qsTranslate("App", "Buscar no histórico")
                 onTextChanged: root.applyFilters()
                 background: Rectangle {
                     radius: App.Theme.radius
@@ -188,13 +189,13 @@ Item {
                 textRole: "label"
                 valueRole: "id"
                 model: [
-                    { "label": "Todos os estados", "id": "all" },
-                    { "label": "Em andamento", "id": "running" },
-                    { "label": "Concluídas", "id": "completed" },
-                    { "label": "Pausadas", "id": "paused" },
-                    { "label": "Com falha", "id": "failed" }
+                    { "label": qsTranslate("App", "Todos os estados"), "id": "all" },
+                    { "label": qsTranslate("App", "Em andamento"), "id": "running" },
+                    { "label": qsTranslate("App", "Concluídas"), "id": "completed" },
+                    { "label": qsTranslate("App", "Pausadas"), "id": "paused" },
+                    { "label": qsTranslate("App", "Com falha"), "id": "failed" }
                 ]
-                Accessible.name: "Filtrar por estado"
+                Accessible.name: qsTranslate("App", "Filtrar por estado")
                 onCurrentValueChanged: root.applyFilters()
                 contentItem: Text {
                     leftPadding: stateFilter.leftPadding
@@ -212,7 +213,7 @@ Item {
             }
 
             Components.AppButton {
-                text: "Atualizar"
+                text: qsTranslate("App", "Atualizar")
                 variant: "secondary"
                 onClicked: root.refreshHistory()
             }
@@ -237,7 +238,7 @@ Item {
                 spacing: 10
                 model: root.filteredItems
                 activeFocusOnTab: true
-                Accessible.name: "Lista do histórico de transcrições"
+                Accessible.name: qsTranslate("App", "Lista do histórico de transcrições")
                 boundsBehavior: Flickable.StopAtBounds
                 Keys.onPressed: event => root.handleScrollKey(
                                     event, historyList)
@@ -296,7 +297,7 @@ Item {
                                 Layout.fillWidth: true
                                 text: String(historyCard.modelData.title
                                              || historyCard.modelData.sourceName
-                                             || "Transcrição sem título")
+                                             || qsTranslate("App", "Transcrição sem título"))
                                 color: App.Theme.text
                                 font.family: App.Theme.displayFont
                                 font.pixelSize: 16
@@ -370,7 +371,7 @@ Item {
                                 visible: String(historyCard.modelData.primaryOutput
                                                 || "").length > 0
                                          || historyCard.modelData.state === "completed"
-                                text: "Abrir"
+                                text: qsTranslate("App", "Abrir")
                                 compact: true
                                 onClicked: root.callBackend(
                                                "openHistoryOutput",
@@ -380,14 +381,14 @@ Item {
                                 visible: historyCard.modelData.state === "failed"
                                          || historyCard.modelData.state === "paused"
                                          || historyCard.modelData.state === "cancelled"
-                                text: "Retomar"
+                                text: qsTranslate("App", "Retomar")
                                 compact: true
                                 onClicked: root.callBackend(
                                                "resumeTranscription",
                                                [historyCard.modelData.id])
                             }
                             Components.AppButton {
-                                text: "Mostrar detalhes"
+                                text: qsTranslate("App", "Mostrar detalhes")
                                 variant: "ghost"
                                 compact: true
                                 onClicked: root.callBackend(
@@ -420,8 +421,8 @@ Item {
                 Text {
                     Layout.fillWidth: true
                     text: root.historyItems.length === 0
-                          ? "Nenhuma transcrição ainda"
-                          : "Nenhum item corresponde à busca"
+                          ? qsTranslate("App", "Nenhuma transcrição ainda")
+                          : qsTranslate("App", "Nenhum item corresponde à busca")
                     color: App.Theme.text
                     font.family: App.Theme.displayFont
                     font.pixelSize: 19
@@ -432,8 +433,8 @@ Item {
                 Text {
                     Layout.fillWidth: true
                     text: root.historyItems.length === 0
-                          ? "Quando você iniciar uma tarefa, o progresso e os resultados aparecerão aqui."
-                          : "Experimente remover o filtro ou buscar outro termo."
+                          ? qsTranslate("App", "Quando você iniciar uma tarefa, o progresso e os resultados aparecerão aqui.")
+                          : qsTranslate("App", "Experimente remover o filtro ou buscar outro termo.")
                     color: App.Theme.textMuted
                     font.family: App.Theme.uiFont
                     font.pixelSize: App.Theme.bodySize
@@ -443,7 +444,7 @@ Item {
                 Components.AppButton {
                     visible: root.historyItems.length === 0
                     Layout.alignment: Qt.AlignHCenter
-                    text: "Transcrever agora"
+                    text: qsTranslate("App", "Transcrever agora")
                     onClicked: {
                         if (root.shell)
                             root.shell.navigate("transcribe")
@@ -455,6 +456,14 @@ Item {
 
     Connections {
         target: root.shell ? root.shell.backend : null
+        function onInterfaceLanguageAboutToChange() {
+            root.savedStateFilter = String(stateFilter.currentValue || "all")
+        }
+        function onInterfaceLanguageChanged() {
+            Qt.callLater(function() {
+                stateFilter.currentIndex = Math.max(0, stateFilter.indexOfValue(root.savedStateFilter))
+            })
+        }
         ignoreUnknownSignals: true
         function onHistoryChanged() {
             root.refreshHistory()

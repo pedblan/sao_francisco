@@ -50,6 +50,8 @@ sao_francisco = [
   "THIRD_PARTY_NOTICES.md",
   "assets/**/*",
   "licenses/**/*",
+  "translations/*.json",
+  "translations/help/*.md",
   "qml/**/*.qml",
   "qml/*.md",
   "qml/qmldir",

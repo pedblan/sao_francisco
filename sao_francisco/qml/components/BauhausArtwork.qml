@@ -6,7 +6,7 @@ Rectangle {
 
     property url source: Qt.resolvedUrl(
                              "../../assets/branding/sao-francisco-bauhaus.png")
-    property string accessibleName: "Ilustração Bauhaus de São Francisco"
+    property string accessibleName: qsTranslate("App", "Ilustração Bauhaus de São Francisco")
 
     implicitWidth: 320
     implicitHeight: 220

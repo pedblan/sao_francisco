@@ -17,6 +17,9 @@ ApplicationWindow {
     property string activeJobState: ""
     property bool outputAvailable: false
     property string pendingPageAction: ""
+    property bool rightToLeft: Boolean(backendValue("rightToLeft", false))
+    LayoutMirroring.enabled: rightToLeft
+    LayoutMirroring.childrenInherit: true
 
     visible: true
     width: 1280
@@ -45,7 +48,7 @@ ApplicationWindow {
             if (typeof callable === "function")
                 return callable.apply(backend, args || [])
         } catch (error) {
-            showToast("Não foi possível concluir esta ação.")
+            showToast(qsTranslate("App", "Não foi possível concluir esta ação."))
         }
         return fallbackValue
     }
@@ -121,7 +124,8 @@ ApplicationWindow {
     }
 
     function showToast(message) {
-        toast.message = message
+        toast.message = backend && typeof backend.translateMessage === "function"
+                ? backend.translateMessage(String(message)) : message
         toast.showing = true
         toastTimer.restart()
     }
@@ -141,134 +145,134 @@ ApplicationWindow {
 
     menuBar: MenuBar {
         Menu {
-            title: "Arquivo"
+            title: qsTranslate("App", "Arquivo")
 
             Action {
-                text: "Nova transcrição"
+                text: qsTranslate("App", "Nova transcrição")
                 shortcut: StandardKey.New
                 onTriggered: window.runPageAction(
                                  "transcribe", "resetDraft")
             }
             MenuSeparator {}
             Action {
-                text: "Adicionar arquivos…"
+                text: qsTranslate("App", "Adicionar arquivos…")
                 shortcut: StandardKey.Open
                 onTriggered: window.runPageAction("transcribe", "openFilePicker")
             }
             Action {
-                text: "Usar endereço…"
+                text: qsTranslate("App", "Usar endereço…")
                 onTriggered: window.runPageAction("transcribe", "focusUrlField")
             }
             MenuSeparator {}
             Action {
-                text: "Histórico"
+                text: qsTranslate("App", "Histórico")
                 onTriggered: window.navigate("history")
             }
             Action {
-                text: "Configurações…"
+                text: qsTranslate("App", "Configurações…")
                 shortcut: StandardKey.Preferences
                 onTriggered: window.navigate("settings")
             }
             MenuSeparator {}
             Action {
-                text: "Sair do São Francisco"
+                text: qsTranslate("App", "Sair do São Francisco")
                 shortcut: StandardKey.Quit
                 onTriggered: window.close()
             }
         }
 
         Menu {
-            title: "Transcrição"
+            title: qsTranslate("App", "Transcrição")
 
             Action {
-                text: "Iniciar transcrição"
+                text: qsTranslate("App", "Iniciar transcrição")
                 shortcut: "Ctrl+Return"
                 enabled: !window.backendBusy
                 onTriggered: window.runPageAction("transcribe", "startTranscription")
             }
             Action {
-                text: "Cancelar transcrição"
+                text: qsTranslate("App", "Cancelar transcrição")
                 enabled: window.activeJobState === "running"
                          || window.activeJobState === "preparing"
                 onTriggered: window.callBackend("cancelTranscription", [])
             }
             MenuSeparator {}
             Action {
-                text: "Abrir resultado"
+                text: qsTranslate("App", "Abrir resultado")
                 enabled: window.outputAvailable
                 onTriggered: window.callBackend("openActiveOutput", [])
             }
             Action {
-                text: "Mostrar pasta do resultado"
+                text: qsTranslate("App", "Mostrar pasta do resultado")
                 enabled: window.outputAvailable
                 onTriggered: window.callBackend("revealActiveOutput", [])
             }
         }
 
         Menu {
-            title: "Visualizar"
+            title: qsTranslate("App", "Visualizar")
 
             Action {
                 text: window.sidebarCollapsed
-                      ? "Mostrar barra lateral"
-                      : "Recolher barra lateral"
+                      ? qsTranslate("App", "Mostrar barra lateral")
+                      : qsTranslate("App", "Recolher barra lateral")
                 onTriggered: window.toggleSidebar()
             }
             MenuSeparator {}
             Action {
                 text: window.visibility === Window.FullScreen
-                      ? "Sair da tela cheia"
-                      : "Tela cheia"
+                      ? qsTranslate("App", "Sair da tela cheia")
+                      : qsTranslate("App", "Tela cheia")
                 shortcut: StandardKey.FullScreen
                 onTriggered: window.toggleFullScreen()
             }
         }
 
         Menu {
-            title: "Ir"
+            title: qsTranslate("App", "Ir")
 
             Action {
-                text: "Transcrever"
+                text: qsTranslate("App", "Transcrever")
                 shortcut: "Ctrl+1"
                 onTriggered: window.navigate("transcribe")
             }
             Action {
-                text: "Histórico"
+                text: qsTranslate("App", "Histórico")
                 shortcut: "Ctrl+2"
                 onTriggered: window.navigate("history")
             }
             Action {
-                text: "Configurações"
+                text: qsTranslate("App", "Configurações")
                 shortcut: "Ctrl+3"
                 onTriggered: window.navigate("settings")
             }
             Action {
-                text: "Ajuda"
+                text: qsTranslate("App", "Ajuda")
                 shortcut: "Ctrl+4"
                 onTriggered: window.navigateHelp("primeiros-passos")
             }
             Action {
-                text: "Sobre"
+                text: qsTranslate("App", "Sobre")
                 shortcut: "Ctrl+5"
                 onTriggered: window.navigate("about")
             }
         }
 
         Menu {
-            title: "Janela"
+            title: qsTranslate("App", "Janela")
 
             Action {
-                text: "Minimizar"
+                text: qsTranslate("App", "Minimizar")
                 onTriggered: window.showMinimized()
             }
             Action {
-                text: "Alternar zoom"
+                text: qsTranslate("App", "Alternar zoom")
                 onTriggered: window.visibility === Window.Maximized
                              ? window.showNormal()
                              : window.showMaximized()
             }
             Action {
-                text: "Trazer para a frente"
+                text: qsTranslate("App", "Trazer para a frente")
                 onTriggered: {
                     window.raise()
                     window.requestActivate()
@@ -277,43 +281,43 @@ ApplicationWindow {
         }
 
         Menu {
-            title: "Ajuda"
+            title: qsTranslate("App", "Ajuda")
 
             Action {
-                text: "Ajuda do São Francisco"
+                text: qsTranslate("App", "Ajuda do São Francisco")
                 shortcut: "Ctrl+K"
                 onTriggered: window.navigateHelp("primeiros-passos")
             }
             Menu {
-                title: "Tópicos"
+                title: qsTranslate("App", "Tópicos")
 
                 Action {
-                    text: "Primeiros passos"
+                    text: qsTranslate("App", "Primeiros passos")
                     onTriggered: window.navigateHelp("primeiros-passos")
                 }
                 Action {
-                    text: "Arquivos e endereços"
+                    text: qsTranslate("App", "Arquivos e endereços")
                     onTriggered: window.navigateHelp(
                                      "adicionar-arquivo-video-ou-url")
                 }
                 Action {
-                    text: "Chaves de API"
+                    text: qsTranslate("App", "Chaves de API")
                     onTriggered: window.navigateHelp(
                                      "chaves-da-openai-e-do-gemini")
                 }
                 Action {
-                    text: "Vídeos longos"
+                    text: qsTranslate("App", "Vídeos longos")
                     onTriggered: window.navigateHelp(
                                      "como-midias-longas-sao-processadas")
                 }
                 Action {
-                    text: "Problemas comuns"
+                    text: qsTranslate("App", "Problemas comuns")
                     onTriggered: window.navigateHelp("problemas-comuns")
                 }
             }
             MenuSeparator {}
             Action {
-                text: "Sobre o São Francisco"
+                text: qsTranslate("App", "Sobre o São Francisco")
                 onTriggered: window.navigate("about")
             }
         }
@@ -364,16 +368,16 @@ ApplicationWindow {
                         running: visible
                         implicitWidth: 22
                         implicitHeight: 22
-                        Accessible.name: "Operação em andamento"
+                        Accessible.name: qsTranslate("App", "Operação em andamento")
                     }
 
                     Components.AppButton {
-                        text: "Ajuda"
+                        text: qsTranslate("App", "Ajuda")
                         variant: "ghost"
                         compact: true
                         onClicked: window.navigateHelp("primeiros-passos")
                         ToolTip.visible: hovered
-                        ToolTip.text: "Abrir a Ajuda"
+                        ToolTip.text: qsTranslate("App", "Abrir a Ajuda")
                     }
                 }
 
@@ -443,7 +447,7 @@ ApplicationWindow {
                         flat: true
                         text: "pedblan.github.io"
                         padding: 2
-                        Accessible.name: "Abrir o site de Pedro Duarte Blanco"
+                        Accessible.name: qsTranslate("App", "Abrir o site de Pedro Duarte Blanco")
                         onClicked: window.callBackend(
                                        "openExternalUrl",
                                        ["https://pedblan.github.io"])

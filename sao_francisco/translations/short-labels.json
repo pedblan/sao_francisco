@@ -1,0 +1,13 @@
+{
+  "Visualizar": ["View", "Affichage", "Ver", "Ansicht", "Visualizza", "Вид", "视图", "عرض"],
+  "TRABALHO": ["WORK", "TRAVAIL", "TRABAJO", "ARBEIT", "LAVORO", "РАБОТА", "工作", "العمل"],
+  "Recolher": ["Collapse", "Réduire", "Contraer", "Einklappen", "Comprimi", "Свернуть", "收起", "طيّ"],
+  "Pausadas": ["Paused", "En pause", "En pausa", "Pausiert", "In pausa", "Приостановлены", "已暂停", "متوقفة مؤقتًا"],
+  "Remover": ["Remove", "Retirer", "Quitar", "Entfernen", "Rimuovi", "Удалить", "移除", "إزالة"],
+  "Ucraniano": ["Ukrainian", "Ukrainien", "Ucraniano", "Ukrainisch", "Ucraino", "Украинский", "乌克兰语", "الأوكرانية"],
+  "Hebraico": ["Hebrew", "Hébreu", "Hebreo", "Hebräisch", "Ebraico", "Иврит", "希伯来语", "العبرية"],
+  "Hindi": ["Hindi", "Hindi", "Hindi", "Hindi", "Hindi", "Хинди", "印地语", "الهندية"],
+  "Coreano": ["Korean", "Coréen", "Coreano", "Koreanisch", "Coreano", "Корейский", "韩语", "الكورية"],
+  "Legendas": ["Subtitles", "Sous-titres", "Subtítulos", "Untertitel", "Sottotitoli", "Субтитры", "字幕", "الترجمة النصية"],
+  "Cancelando…": ["Cancelling…", "Annulation…", "Cancelando…", "Wird abgebrochen…", "Annullamento…", "Отмена…", "正在取消…", "جارٍ الإلغاء…"]
+}

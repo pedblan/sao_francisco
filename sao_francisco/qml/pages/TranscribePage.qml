@@ -19,6 +19,8 @@ Item {
         { "label": "Google Gemini", "id": "gemini" }
     ]
     property var modelOptions: []
+    property string savedModelForLanguageChange: ""
+    property string savedTranscriptionLanguage: "auto"
 
     function backendValue(name, fallbackValue) {
         return shell ? shell.backendValue(name, fallbackValue) : fallbackValue
@@ -49,30 +51,30 @@ Item {
         if (providerId === "gemini") {
             return [
                 {
-                    "label": "Gemini detalhado — saída estruturada",
+                    "label": qsTranslate("App", "Gemini detalhado — saída estruturada"),
                     "id": "gemini-3.6-flash"
                 },
                 {
-                    "label": "Gemini econômico — grande volume",
+                    "label": qsTranslate("App", "Gemini econômico — grande volume"),
                     "id": "gemini-3.5-flash-lite"
                 }
             ]
         }
         return [
             {
-                "label": "Econômico — recomendado para começar",
+                "label": qsTranslate("App", "Econômico — recomendado para começar"),
                 "id": "gpt-4o-mini-transcribe"
             },
             {
-                "label": "Maior precisão — nomes e vocabulário",
+                "label": qsTranslate("App", "Maior precisão — nomes e vocabulário"),
                 "id": "gpt-4o-transcribe"
             },
             {
-                "label": "Identificar falantes — separação por participante",
+                "label": qsTranslate("App", "Identificar falantes — separação por participante"),
                 "id": "gpt-4o-transcribe-diarize"
             },
             {
-                "label": "Legendas e tempos — segmentos precisos",
+                "label": qsTranslate("App", "Legendas e tempos — segmentos precisos"),
                 "id": "whisper-1"
             }
         ]
@@ -131,7 +133,7 @@ Item {
         callBackend("setPendingSources", [[]])
         pageScroll.contentY = Number(pageScroll.originY || 0)
         if (shell)
-            shell.showToast("Nova transcrição pronta para configurar.")
+            shell.showToast(qsTranslate("App", "Nova transcrição pronta para configurar."))
     }
 
     function openFilePicker() {
@@ -170,7 +172,7 @@ Item {
     function startTranscription() {
         if (!canStart()) {
             if (shell)
-                shell.showToast("Adicione uma fonte e escolha ao menos um formato.")
+                shell.showToast(qsTranslate("App", "Adicione uma fonte e escolha ao menos um formato."))
             return
         }
         const payload = {
@@ -193,44 +195,44 @@ Item {
 
     function provenanceLabel(value) {
         const labels = {
-            "existing_captions": "Legenda existente",
-            "author_captions": "Legendas do autor",
-            "automatic_captions": "Legendas automáticas",
-            "audio_transcription": "Áudio transcrito"
+            "existing_captions": qsTranslate("App", "Legenda existente"),
+            "author_captions": qsTranslate("App", "Legendas do autor"),
+            "automatic_captions": qsTranslate("App", "Legendas automáticas"),
+            "audio_transcription": qsTranslate("App", "Áudio transcrito")
         }
         return labels[value] || ""
     }
 
     function jobStatusLabel(value, stage, originalReady, improvementState) {
         if (value === "cancelling")
-            return "Cancelando"
+            return qsTranslate("App", "Cancelando")
         if (originalReady && improvementState === "in_progress")
-            return "Transcrição pronta · Melhorando texto"
+            return qsTranslate("App", "Transcrição pronta · Melhorando texto")
         if (originalReady && improvementState === "not_completed"
                 && (value === "failed" || value === "cancelled"
                     || value === "paused"))
-            return "Transcrição pronta · Melhoria não concluída"
+            return qsTranslate("App", "Transcrição pronta · Melhoria não concluída")
         if (originalReady && improvementState === "ready")
-            return "Transcrição e texto melhorado prontos"
+            return qsTranslate("App", "Transcrição e texto melhorado prontos")
         if (value === "running"
                 && (stage === "exporting_original"
                     || stage === "exporting_improved"))
-            return "Criando arquivos"
+            return qsTranslate("App", "Criando arquivos")
         if (value === "failed" && stage === "improving")
-            return "Não foi possível melhorar"
+            return qsTranslate("App", "Não foi possível melhorar")
         if (value === "failed"
                 && (stage === "original_export_failed"
                     || stage === "improved_export_failed"))
-            return "Não foi possível exportar"
+            return qsTranslate("App", "Não foi possível exportar")
         const labels = {
-            "preparing": "Preparando",
-            "running": "Em andamento",
-            "paused": "Pausada",
-            "completed": "Concluída",
-            "failed": "Falhou",
-            "cancelled": "Cancelada"
+            "preparing": qsTranslate("App", "Preparando"),
+            "running": qsTranslate("App", "Em andamento"),
+            "paused": qsTranslate("App", "Pausada"),
+            "completed": qsTranslate("App", "Concluída"),
+            "failed": qsTranslate("App", "Falhou"),
+            "cancelled": qsTranslate("App", "Cancelada")
         }
-        return labels[value] || "Em espera"
+        return labels[value] || qsTranslate("App", "Em espera")
     }
 
     function jobTone(value) {
@@ -281,11 +283,11 @@ Item {
 
     FileDialog {
         id: fileDialog
-        title: "Escolher áudio ou vídeo"
+        title: qsTranslate("App", "Escolher áudio ou vídeo")
         fileMode: FileDialog.OpenFiles
         nameFilters: [
-            "Áudio e vídeo (*.mp3 *.m4a *.wav *.aac *.flac *.ogg *.mp4 *.mov *.mkv *.webm *.avi)",
-            "Todos os arquivos (*)"
+            qsTranslate("App", "Áudio e vídeo (*.mp3 *.m4a *.wav *.aac *.flac *.ogg *.mp4 *.mov *.mkv *.webm *.avi)"),
+            qsTranslate("App", "Todos os arquivos (*)")
         ]
         onAccepted: root.acceptFiles(selectedFiles)
     }
@@ -306,7 +308,7 @@ Item {
         flickableDirection: Flickable.VerticalFlick
         boundsBehavior: Flickable.StopAtBounds
         activeFocusOnTab: true
-        Accessible.name: "Conteúdo da tela Transcrever"
+        Accessible.name: qsTranslate("App", "Conteúdo da tela Transcrever")
         Keys.onPressed: event => root.handleScrollKey(event, pageScroll)
 
         Rectangle {
@@ -333,8 +335,8 @@ Item {
 
             Components.PageHeader {
                 Layout.fillWidth: true
-                title: "Transforme áudio e vídeo em texto"
-                description: "Escolha um arquivo do computador ou cole o endereço de um vídeo. Depois, selecione o serviço, o modelo e os arquivos que deseja receber."
+                title: qsTranslate("App", "Transforme áudio e vídeo em texto")
+                description: qsTranslate("App", "Escolha um arquivo do computador ou cole o endereço de um vídeo. Depois, selecione o serviço, o modelo e os arquivos que deseja receber.")
             }
 
             Components.AppCard {
@@ -348,11 +350,11 @@ Item {
 
                     Button {
                         id: filesTab
-                        text: "Arquivos"
+                        text: qsTranslate("App", "Arquivos")
                         checked: root.sourceMode === "files"
                         checkable: true
                         autoExclusive: true
-                        Accessible.name: "Usar arquivos"
+                        Accessible.name: qsTranslate("App", "Usar arquivos")
                         onClicked: root.sourceMode = "files"
 
                         contentItem: RowLayout {
@@ -388,11 +390,11 @@ Item {
 
                     Button {
                         id: urlTab
-                        text: "YouTube ou endereço"
+                        text: qsTranslate("App", "YouTube ou endereço")
                         checked: root.sourceMode === "url"
                         checkable: true
                         autoExclusive: true
-                        Accessible.name: "Usar endereço da internet"
+                        Accessible.name: qsTranslate("App", "Usar endereço da internet")
                         onClicked: root.focusUrlField()
 
                         contentItem: RowLayout {
@@ -457,11 +459,9 @@ Item {
                         Text {
                             Layout.fillWidth: true
                             text: root.selectedFiles.length > 0
-                                  ? root.selectedFiles.length
-                                    + (root.selectedFiles.length === 1
-                                       ? " arquivo selecionado"
-                                       : " arquivos selecionados")
-                                  : "Arraste arquivos de áudio ou vídeo"
+                                  ? qsTranslate("App", "Arquivos selecionados: {count}")
+                                    .replace("{count}", root.selectedFiles.length)
+                                  : qsTranslate("App", "Arraste arquivos de áudio ou vídeo")
                             color: App.Theme.text
                             font.family: App.Theme.displayFont
                             font.pixelSize: 17
@@ -471,7 +471,7 @@ Item {
                         }
                         Text {
                             Layout.fillWidth: true
-                            text: "ou escolha no computador"
+                            text: qsTranslate("App", "ou escolha no computador")
                             color: App.Theme.textMuted
                             font.family: App.Theme.uiFont
                             font.pixelSize: App.Theme.bodySize
@@ -480,8 +480,8 @@ Item {
                         Components.AppButton {
                             Layout.alignment: Qt.AlignHCenter
                             text: root.selectedFiles.length > 0
-                                  ? "Adicionar mais"
-                                  : "Escolher arquivos"
+                                  ? qsTranslate("App", "Adicionar mais")
+                                  : qsTranslate("App", "Escolher arquivos")
                             variant: "secondary"
                             onClicked: root.openFilePicker()
                         }
@@ -544,10 +544,10 @@ Item {
                                 Button {
                                     id: removeButton
 
-                                    text: "Remover"
+                                    text: qsTranslate("App", "Remover")
                                     flat: true
                                     implicitHeight: 30
-                                    Accessible.name: "Remover " + fileRow.modelData
+                                    Accessible.name: qsTranslate("App", "Remover ") + fileRow.modelData
                                     onClicked: root.removeFile(fileRow.index)
                                     contentItem: Text {
                                         text: removeButton.text
@@ -569,7 +569,7 @@ Item {
                     spacing: 8
 
                     Text {
-                        text: "Endereço do vídeo"
+                        text: qsTranslate("App", "Endereço do vídeo")
                         color: App.Theme.text
                         font.family: App.Theme.uiFont
                         font.pixelSize: App.Theme.bodySize
@@ -577,6 +577,9 @@ Item {
                     }
                     TextField {
                         id: sourceUrl
+                        objectName: "sourceUrlInput"
+                        LayoutMirroring.enabled: false
+                        horizontalAlignment: TextInput.AlignLeft
                         Layout.fillWidth: true
                         implicitHeight: 42
                         placeholderText: "https://www.youtube.com/watch?v=…"
@@ -586,7 +589,7 @@ Item {
                         font.pixelSize: App.Theme.bodySize
                         leftPadding: 13
                         rightPadding: 13
-                        Accessible.name: "Endereço do vídeo"
+                        Accessible.name: qsTranslate("App", "Endereço do vídeo")
                         background: Rectangle {
                             radius: App.Theme.radius
                             color: App.Theme.surface
@@ -598,7 +601,7 @@ Item {
                     }
                     Text {
                         Layout.fillWidth: true
-                        text: "Cole o endereço público do vídeo que deseja transcrever."
+                        text: qsTranslate("App", "Cole o endereço público do vídeo que deseja transcrever.")
                         color: App.Theme.textMuted
                         font.family: App.Theme.uiFont
                         font.pixelSize: 12
@@ -610,7 +613,7 @@ Item {
                     id: preferCaptions
                     visible: root.sourceMode === "url"
                     Layout.fillWidth: true
-                    text: "Usar legendas disponíveis no vídeo"
+                    text: qsTranslate("App", "Usar legendas disponíveis no vídeo")
                     checked: false
                     font.family: App.Theme.uiFont
                     Accessible.name: text
@@ -624,7 +627,7 @@ Item {
 
                 Text {
                     Layout.fillWidth: true
-                    text: "Modelo e resultado"
+                    text: qsTranslate("App", "Modelo e resultado")
                     color: App.Theme.text
                     font.family: App.Theme.displayFont
                     font.pixelSize: 19
@@ -641,7 +644,7 @@ Item {
                         Layout.fillWidth: true
                         spacing: 6
                         Text {
-                            text: "Provedor"
+                            text: qsTranslate("App", "Provedor")
                             color: App.Theme.text
                             font.family: App.Theme.uiFont
                             font.pixelSize: App.Theme.bodySize
@@ -653,7 +656,7 @@ Item {
                             model: root.providerOptions
                             textRole: "label"
                             valueRole: "id"
-                            Accessible.name: "Provedor de transcrição"
+                            Accessible.name: qsTranslate("App", "Provedor de transcrição")
                             onCurrentValueChanged: {
                                 root.modelOptions = root.modelsFor(
                                             String(currentValue))
@@ -666,7 +669,7 @@ Item {
                         Layout.fillWidth: true
                         spacing: 6
                         Text {
-                            text: "Modelo"
+                            text: qsTranslate("App", "Modelo")
                             color: App.Theme.text
                             font.family: App.Theme.uiFont
                             font.pixelSize: App.Theme.bodySize
@@ -674,11 +677,12 @@ Item {
                         }
                         ComboBox {
                             id: modelCombo
+                            objectName: "transcriptionModelSelector"
                             Layout.fillWidth: true
                             model: root.modelOptions
                             textRole: "label"
                             valueRole: "id"
-                            Accessible.name: "Modelo de transcrição"
+                            Accessible.name: qsTranslate("App", "Modelo de transcrição")
                         }
                     }
 
@@ -686,7 +690,7 @@ Item {
                         Layout.fillWidth: true
                         spacing: 6
                         Text {
-                            text: "Idioma"
+                            text: qsTranslate("App", "Idioma")
                             color: App.Theme.text
                             font.family: App.Theme.uiFont
                             font.pixelSize: App.Theme.bodySize
@@ -694,33 +698,34 @@ Item {
                         }
                         ComboBox {
                             id: languageCombo
+                            objectName: "transcriptionLanguageSelector"
                             Layout.fillWidth: true
                             textRole: "label"
                             valueRole: "id"
                             model: [
                                 {
-                                    "label": "Detectar automaticamente",
+                                    "label": qsTranslate("App", "Detectar automaticamente"),
                                     "id": "auto"
                                 },
-                                { "label": "Português", "id": "pt" },
-                                { "label": "Inglês", "id": "en" },
-                                { "label": "Espanhol", "id": "es" },
-                                { "label": "Francês", "id": "fr" },
-                                { "label": "Alemão", "id": "de" },
-                                { "label": "Italiano", "id": "it" },
-                                { "label": "Catalão", "id": "ca" },
-                                { "label": "Holandês", "id": "nl" },
-                                { "label": "Polonês", "id": "pl" },
-                                { "label": "Russo", "id": "ru" },
-                                { "label": "Ucraniano", "id": "uk" },
-                                { "label": "Árabe", "id": "ar" },
-                                { "label": "Hebraico", "id": "he" },
-                                { "label": "Hindi", "id": "hi" },
-                                { "label": "Japonês", "id": "ja" },
-                                { "label": "Coreano", "id": "ko" },
-                                { "label": "Chinês", "id": "zh" }
+                                { "label": qsTranslate("App", "Português"), "id": "pt" },
+                                { "label": qsTranslate("App", "Inglês"), "id": "en" },
+                                { "label": qsTranslate("App", "Espanhol"), "id": "es" },
+                                { "label": qsTranslate("App", "Francês"), "id": "fr" },
+                                { "label": qsTranslate("App", "Alemão"), "id": "de" },
+                                { "label": qsTranslate("App", "Italiano"), "id": "it" },
+                                { "label": qsTranslate("App", "Catalão"), "id": "ca" },
+                                { "label": qsTranslate("App", "Holandês"), "id": "nl" },
+                                { "label": qsTranslate("App", "Polonês"), "id": "pl" },
+                                { "label": qsTranslate("App", "Russo"), "id": "ru" },
+                                { "label": qsTranslate("App", "Ucraniano"), "id": "uk" },
+                                { "label": qsTranslate("App", "Árabe"), "id": "ar" },
+                                { "label": qsTranslate("App", "Hebraico"), "id": "he" },
+                                { "label": qsTranslate("App", "Hindi"), "id": "hi" },
+                                { "label": qsTranslate("App", "Japonês"), "id": "ja" },
+                                { "label": qsTranslate("App", "Coreano"), "id": "ko" },
+                                { "label": qsTranslate("App", "Chinês"), "id": "zh" }
                             ]
-                            Accessible.name: "Idioma do conteúdo"
+                            Accessible.name: qsTranslate("App", "Idioma do conteúdo")
                         }
                     }
 
@@ -728,7 +733,7 @@ Item {
                         Layout.fillWidth: true
                         spacing: 6
                         Text {
-                            text: "Pasta de destino"
+                            text: qsTranslate("App", "Pasta de destino")
                             color: App.Theme.text
                             font.family: App.Theme.uiFont
                             font.pixelSize: App.Theme.bodySize
@@ -739,17 +744,19 @@ Item {
                             spacing: 8
                             TextField {
                                 id: outputFolder
+                                LayoutMirroring.enabled: false
+                                horizontalAlignment: TextInput.AlignLeft
                                 Layout.fillWidth: true
                                 placeholderText: root.sourceMode === "url"
-                                                 ? "Usar a pasta Documentos"
-                                                 : "Usar a pasta do arquivo"
+                                                 ? qsTranslate("App", "Usar a pasta Documentos")
+                                                 : qsTranslate("App", "Usar a pasta do arquivo")
                                 selectByMouse: true
                                 font.family: App.Theme.uiFont
                                 font.pixelSize: App.Theme.bodySize
-                                Accessible.name: "Pasta de destino"
+                                Accessible.name: qsTranslate("App", "Pasta de destino")
                             }
                             Components.AppButton {
-                                text: "Escolher…"
+                                text: qsTranslate("App", "Escolher…")
                                 variant: "secondary"
                                 compact: true
                                 onClicked: {
@@ -768,7 +775,7 @@ Item {
                     spacing: 8
 
                     Text {
-                        text: "Formatos de saída"
+                        text: qsTranslate("App", "Formatos de saída")
                         color: App.Theme.text
                         font.family: App.Theme.uiFont
                         font.pixelSize: App.Theme.bodySize
@@ -782,31 +789,31 @@ Item {
                             id: docxFormat
                             text: "DOCX"
                             checked: true
-                            Accessible.name: "Gerar arquivo DOCX"
+                            Accessible.name: qsTranslate("App", "Gerar arquivo DOCX")
                         }
                         CheckBox {
                             id: txtFormat
                             text: "TXT"
                             checked: true
-                            Accessible.name: "Gerar arquivo TXT"
+                            Accessible.name: qsTranslate("App", "Gerar arquivo TXT")
                         }
                         CheckBox {
                             id: srtFormat
                             text: "SRT"
                             checked: true
-                            Accessible.name: "Gerar legenda SRT"
+                            Accessible.name: qsTranslate("App", "Gerar legenda SRT")
                         }
                         CheckBox {
                             id: vttFormat
                             text: "VTT"
                             checked: false
-                            Accessible.name: "Gerar legenda VTT"
+                            Accessible.name: qsTranslate("App", "Gerar legenda VTT")
                         }
                     }
                     CheckBox {
                         id: includeTimestamps
                         Layout.fillWidth: true
-                        text: "Incluir marcações de tempo no DOCX e TXT"
+                        text: qsTranslate("App", "Incluir marcações de tempo no DOCX e TXT")
                         checked: false
                         font.family: App.Theme.uiFont
                         Accessible.name: text
@@ -815,12 +822,12 @@ Item {
                         id: improveWithAi
                         objectName: "improveWithAiCheck"
                         Layout.fillWidth: true
-                        text: "Melhorar com IA"
+                        text: qsTranslate("App", "Melhorar com IA")
                         checked: false
                         enabled: docxFormat.checked || txtFormat.checked
                         font.family: App.Theme.uiFont
                         Accessible.name: text
-                        Accessible.description: "Organiza em parágrafos e corrige pontuação e erros evidentes, sem resumir."
+                        Accessible.description: qsTranslate("App", "Organiza em parágrafos e corrige pontuação e erros evidentes, sem resumir.")
                         onEnabledChanged: {
                             if (!enabled)
                                 checked = false
@@ -828,7 +835,7 @@ Item {
                     }
                     Text {
                         Layout.fillWidth: true
-                        text: "Organiza em parágrafos e corrige pontuação e erros evidentes, sem resumir."
+                        text: qsTranslate("App", "Organiza em parágrafos e corrige pontuação e erros evidentes, sem resumir.")
                         color: App.Theme.textMuted
                         font.family: App.Theme.uiFont
                         font.pixelSize: 12
@@ -837,7 +844,7 @@ Item {
                     Text {
                         visible: improveWithAi.checked
                         Layout.fillWidth: true
-                        text: "Confira especialmente nomes, números e trechos pouco claros."
+                        text: qsTranslate("App", "Confira especialmente nomes, números e trechos pouco claros.")
                         color: App.Theme.secondary
                         font.family: App.Theme.uiFont
                         font.pixelSize: 12
@@ -852,14 +859,14 @@ Item {
 
                     Text {
                         Layout.fillWidth: true
-                        text: "O valor aproximado aparecerá durante o trabalho. A cobrança oficial fica na conta do serviço escolhido."
+                        text: qsTranslate("App", "O valor aproximado aparecerá durante o trabalho. A cobrança oficial fica na conta do serviço escolhido.")
                         color: App.Theme.textMuted
                         font.family: App.Theme.uiFont
                         font.pixelSize: 12
                         wrapMode: Text.WordWrap
                     }
                     Components.AppButton {
-                        text: "Iniciar transcrição"
+                        text: qsTranslate("App", "Iniciar transcrição")
                         enabled: root.canStart()
                         onClicked: root.startTranscription()
                     }
@@ -885,7 +892,7 @@ Item {
                             Layout.fillWidth: true
                             text: String(root.activeJob.title
                                          || root.activeJob.sourceName
-                                         || "Transcrição")
+                                         || qsTranslate("App", "Transcrição"))
                             color: App.Theme.text
                             font.family: App.Theme.displayFont
                             font.pixelSize: 19
@@ -895,7 +902,7 @@ Item {
                         Text {
                             Layout.fillWidth: true
                             text: String(root.activeJob.detail
-                                         || "Preparando a próxima etapa…")
+                                         || qsTranslate("App", "Preparando a próxima etapa…"))
                             color: App.Theme.textMuted
                             font.family: App.Theme.uiFont
                             font.pixelSize: 13
@@ -926,9 +933,9 @@ Item {
                                        || Number(root.activeJob.totalParts || 0) <= 0)
                     palette.highlight: App.Theme.primary
                     palette.base: App.Theme.surfaceMuted
-                    Accessible.name: "Progresso do trabalho"
+                    Accessible.name: qsTranslate("App", "Progresso do trabalho")
                     Accessible.description: indeterminate
-                                            ? "Progresso ainda não calculado"
+                                            ? qsTranslate("App", "Progresso ainda não calculado")
                                             : Math.round(value * 100) + "%"
                 }
 
@@ -968,7 +975,7 @@ Item {
 
                     Text {
                         visible: root.groupHasFiles("improved")
-                        text: "Texto melhorado"
+                        text: qsTranslate("App", "Texto melhorado")
                         color: App.Theme.text
                         font.family: App.Theme.uiFont
                         font.pixelSize: 13
@@ -992,7 +999,7 @@ Item {
                     }
                     Text {
                         visible: root.groupHasFiles("original")
-                        text: "Transcrição original"
+                        text: qsTranslate("App", "Transcrição original")
                         color: App.Theme.text
                         font.family: App.Theme.uiFont
                         font.pixelSize: 13
@@ -1016,7 +1023,7 @@ Item {
                     }
                     Text {
                         visible: root.groupHasFiles("captions")
-                        text: "Legendas"
+                        text: qsTranslate("App", "Legendas")
                         color: App.Theme.text
                         font.family: App.Theme.uiFont
                         font.pixelSize: 13
@@ -1057,12 +1064,10 @@ Item {
                         visible: Number(root.activeJob.totalParts || 0) > 0
                         text: {
                             const total = Number(root.activeJob.totalParts || 0)
-                            return String(root.activeJob.completedParts)
-                                    + " de "
-                                    + String(total)
-                                    + (total === 1
-                                       ? " parte concluída"
-                                       : " partes concluídas")
+                            return qsTranslate("App", "Partes concluídas: {count}")
+                                    .replace("{count}", qsTranslate("App", "{done} de {total}")
+                                        .replace("{done}", root.activeJob.completedParts)
+                                        .replace("{total}", total))
                         }
                         color: App.Theme.textMuted
                         font.family: App.Theme.uiFont
@@ -1074,7 +1079,7 @@ Item {
                                  || root.activeJob.state === "cancelling"
                         enabled: root.activeJob.state !== "cancelling"
                         text: root.activeJob.state === "cancelling"
-                              ? "Cancelando…" : "Cancelar"
+                              ? qsTranslate("App", "Cancelando…") : qsTranslate("App", "Cancelar")
                         variant: "ghost"
                         compact: true
                         onClicked: root.callBackend(
@@ -1084,7 +1089,7 @@ Item {
                         visible: root.groupHasFiles("improved")
                                  || root.groupHasFiles("original")
                                  || root.groupHasFiles("captions")
-                        text: "Abrir resultado"
+                        text: qsTranslate("App", "Abrir resultado")
                         compact: true
                         onClicked: root.callBackend(
                                        "openActiveOutput", [])
@@ -1106,6 +1111,21 @@ Item {
 
         function onActiveJobChanged() {
             root.syncJob()
+        }
+        function onInterfaceLanguageAboutToChange() {
+            root.savedModelForLanguageChange = String(modelCombo.currentValue || "")
+            root.savedTranscriptionLanguage = String(languageCombo.currentValue || "auto")
+        }
+        function onInterfaceLanguageChanged() {
+            root.modelOptions = root.modelsFor(String(providerCombo.currentValue || "openai"))
+            const restored = modelCombo.indexOfValue(root.savedModelForLanguageChange)
+            if (restored >= 0)
+                modelCombo.currentIndex = restored
+            // Translated array models are rebuilt after the language signal.
+            Qt.callLater(function() {
+                languageCombo.currentIndex = Math.max(0, languageCombo.indexOfValue(
+                                                           root.savedTranscriptionLanguage))
+            })
         }
         function onPendingSourcesChanged() {
             const values = root.backendValue("pendingSources", [])

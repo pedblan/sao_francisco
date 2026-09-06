@@ -210,6 +210,28 @@ def wait_until(
     assert predicate()
 
 
+def test_localized_history_preserves_manifest_and_credential_mask(backend, monkeypatch):
+    instance, pipeline = backend
+    original_title = "Concluída; os arquivos estão prontos."
+    manifest = pipeline.job_store.create_job(
+        source="/fixture/áudio.wav", chunks=(ChunkSpec(0, 0, 2),),
+        provider="openai", model="gpt-4o-mini-transcribe", language="pt",
+        metadata={"source_name": original_title},
+    )
+    monkeypatch.setattr(backend_module, "_masked_credential",
+                        lambda _provider: "•••••••• — sessão atual")
+    before = pipeline.job_store.load_job(manifest.job_id).to_dict()
+    assert instance.settings["openAiKeyMasked"] == "•••••••• — current session"
+    english = instance.history()[0]
+    assert english["title"] == original_title
+    assert instance.setInterfaceLanguage("pt-BR")
+    portuguese = instance.history()[0]
+    assert portuguese["title"] == original_title
+    assert english["modelLabel"] != portuguese["modelLabel"]
+    assert instance.settings["openAiKeyMasked"] == "•••••••• — sessão atual"
+    assert pipeline.job_store.load_job(manifest.job_id).to_dict() == before
+
+
 def submission(*sources: Path) -> dict[str, Any]:
     return {
         "sourceType": "files",
@@ -244,7 +266,7 @@ def test_qml_contract_exposes_properties_navigation_and_help(backend) -> None:
     instance.navigateHelp("formatos-de-saida")
     assert instance.currentRoute == "help"
     assert instance.helpAnchor == "formatos-de-saida"
-    assert instance.helpSection("formatos-de-saida")["markdown"].startswith("## Formatos de saída")
+    assert instance.helpSection("formatos-de-saida")["markdown"].startswith("## Output formats")
     assert instance.modelsForProvider("openai")
     assert instance.modelsForProvider("unknown") == []
 
@@ -311,11 +333,11 @@ def test_cancellation_is_cooperative_and_leaves_the_ui_resumable(
     wait_until(application, pipeline.started.is_set)
     instance.cancelTranscription()
     assert instance.activeJobState == "cancelling"
-    assert "cancelando" in instance.activeJob["detail"].casefold()
+    assert "cancelling" in instance.activeJob["detail"].casefold()
     wait_until(application, lambda: not instance.busy)
 
     assert instance.activeJobState == "cancelled"
-    assert "retomar" in instance.activeJob["detail"].casefold()
+    assert "resume" in instance.activeJob["detail"].casefold()
 
 
 def test_disposable_process_forces_cancel_and_accepts_the_next_task(

@@ -12,10 +12,12 @@ APP_NAME = "São Francisco"
 APP_ICON = PACKAGE_ROOT / "assets" / "branding" / "sao-francisco-macos.png"
 
 datas = [
+    (str(PROJECT_ROOT / "LICENSE"), "sao_francisco/licenses"),
     (str(PACKAGE_ROOT / "AJUDA.md"), "sao_francisco"),
     (str(PACKAGE_ROOT / "THIRD_PARTY_NOTICES.md"), "sao_francisco"),
     (str(PACKAGE_ROOT / "assets"), "sao_francisco/assets"),
     (str(PACKAGE_ROOT / "licenses"), "sao_francisco/licenses"),
+    (str(PACKAGE_ROOT / "translations"), "sao_francisco/translations"),
     (str(PACKAGE_ROOT / "qml"), "sao_francisco/qml"),
 ]
 hiddenimports = sorted(

@@ -1,7 +1,9 @@
 # Ajuda do São Francisco
 
 O São Francisco transforma áudio e vídeo em texto. Você pode escolher um arquivo do
-computador ou colar o endereço público de um vídeo.
+computador ou colar o endereço público de um vídeo. A interface começa em inglês;
+você pode mudá-la em **Configurações → Idioma da interface**, sem alterar o idioma
+das gravações.
 
 ## Primeiros passos
 
@@ -159,8 +161,9 @@ repete automaticamente uma chamada cujo resultado ficou incerto.
 
 ## Custos, dados e armazenamento
 
-O São Francisco não cobra pela transcrição. Quando houver cobrança, ela será feita
-diretamente pela OpenAI ou pelo Google, conforme a sua conta e o modelo escolhido.
+A compra do aplicativo é separada do uso das APIs. O São Francisco não cobra por
+transcrição. Eventuais custos de API são cobrados diretamente pela OpenAI ou pelo
+Google, conforme a sua conta e o modelo escolhido; a compra não inclui créditos de API.
 
 Cada parte enviada pode gerar consumo. Ao retomar, o aplicativo reaproveita o que já foi
 concluído.
@@ -178,31 +181,11 @@ Quando o serviço informar uma contagem confiável, o aplicativo também pode mo
 total de tokens. Tokens são pequenas unidades usadas para medir a entrada e a resposta.
 O São Francisco não inventa uma contagem quando ela não é fornecida.
 
-### Preços de referência por milhão de tokens
+### Preços atuais das APIs
 
-Valores revisados em 28 de julho de 2026. Eles podem mudar; confirme sempre nas páginas
-de [preços da OpenAI](https://developers.openai.com/api/docs/pricing) e de
-[preços do Gemini](https://ai.google.dev/gemini-api/docs/pricing).
-
-| Uso | Entrada | Entrada em cache | Saída |
-| --- | ---: | ---: | ---: |
-| OpenAI — melhorar, volume | US$ 2,50 | US$ 0,25 | US$ 15,00 |
-| OpenAI — melhorar, maior cuidado | US$ 5,00 | US$ 0,50 | US$ 30,00 |
-| Gemini detalhado | US$ 1,50 | — | US$ 7,50 |
-| Gemini econômico | US$ 0,30 | — | US$ 2,50 |
-
-Nos modelos de transcrição da OpenAI que informam tokens, a referência é:
-
-| Uso | Entrada | Saída |
-| --- | ---: | ---: |
-| Transcrição econômica | US$ 1,25 | US$ 5,00 |
-| Transcrição de maior precisão | US$ 2,50 | US$ 10,00 |
-| Transcrição com falantes | US$ 2,50 | US$ 10,00 |
-
-Alguns modelos de transcrição também podem ser estimados por minuto: o econômico da
-OpenAI, cerca de US$ 0,003 por minuto; os demais modelos de transcrição da OpenAI,
-cerca de US$ 0,006 por minuto. Quando o serviço devolve uso detalhado, o aplicativo
-prefere esses dados.
+Consulte as páginas oficiais de [preços da OpenAI](https://developers.openai.com/api/docs/pricing)
+e de [preços do Gemini](https://ai.google.dev/gemini-api/docs/pricing). Preços, unidades,
+modelos e planos gratuitos podem mudar. Confira antes de iniciar um trabalho pago.
 
 O áudio é enviado ao serviço selecionado. O histórico e os arquivos de trabalho ficam no
 computador. Os resultados permanecem na pasta de destino até que você os apague.
@@ -266,7 +249,8 @@ O índice e o artigo da Ajuda possuem rolagem independente.
 
 ## Licenças e sobre
 
-O código do São Francisco é distribuído sob a licença MIT.
+O código do São Francisco é distribuído sob a licença MIT. A venda dos pacotes prontos
+para download não retira as liberdades concedidas por essa licença.
 
 Componentes, bibliotecas e fontes conservam suas próprias licenças. Na tela **Sobre**,
 escolha **Ver avisos de terceiros** para ler o inventário dentro do aplicativo.

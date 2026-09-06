@@ -51,7 +51,7 @@ Item {
         flickableDirection: Flickable.VerticalFlick
         boundsBehavior: Flickable.StopAtBounds
         activeFocusOnTab: true
-        Accessible.name: "Conteúdo da tela Sobre"
+        Accessible.name: qsTranslate("App", "Conteúdo da tela Sobre")
         Keys.onPressed: event => root.handleScrollKey(event, aboutScroll)
 
         Rectangle {
@@ -109,7 +109,7 @@ Item {
                         }
                         Text {
                             Layout.fillWidth: true
-                            text: "Transcrição cuidadosa para áudio e vídeo de qualquer duração."
+                            text: qsTranslate("App", "Transcrição cuidadosa para áudio e vídeo de qualquer duração.")
                             color: App.Theme.primary
                             font.family: App.Theme.displayFont
                             font.pixelSize: 18
@@ -119,7 +119,7 @@ Item {
                         }
                         Text {
                             Layout.fillWidth: true
-                            text: "Transforma gravações e vídeos longos em textos e legendas, com acompanhamento do início ao fim."
+                            text: qsTranslate("App", "Transforma gravações e vídeos longos em textos e legendas, com acompanhamento do início ao fim.")
                             color: App.Theme.textMuted
                             font.family: App.Theme.uiFont
                             font.pixelSize: 14
@@ -127,7 +127,7 @@ Item {
                             wrapMode: Text.WordWrap
                         }
                         Components.StatusPill {
-                            text: "Versão " + String(root.backendValue(
+                            text: qsTranslate("App", "Versão ") + String(root.backendValue(
                                                        "appVersion",
                                                        Qt.application.version
                                                        || "1.0.0"))
@@ -156,7 +156,7 @@ Item {
                         Layout.alignment: Qt.AlignHCenter
                         source: Qt.resolvedUrl(
                                     "../../assets/branding/sao-francisco-coffee-bauhaus.png")
-                        accessibleName: "Ilustração Bauhaus de uma xícara de café com gesto de regência"
+                        accessibleName: qsTranslate("App", "Ilustração Bauhaus de uma xícara de café com gesto de regência")
                     }
 
                     ColumnLayout {
@@ -164,12 +164,12 @@ Item {
                         spacing: 10
 
                         Components.StatusPill {
-                            text: "SAIBA MAIS"
+                            text: qsTranslate("App", "SAIBA MAIS")
                             tone: "warning"
                         }
                         Text {
                             Layout.fillWidth: true
-                            text: "Conheça os livros e outros trabalhos"
+                            text: qsTranslate("App", "Conheça os livros e outros trabalhos")
                             color: App.Theme.text
                             font.family: App.Theme.displayFont
                             font.pixelSize: 24
@@ -178,7 +178,7 @@ Item {
                         }
                         Text {
                             Layout.fillWidth: true
-                            text: "São Francisco é software livre! Se você quiser valorizar o trabalho, leia os livros e conheça os outros projetos na minha página de autor."
+                            text: qsTranslate("App", "São Francisco é um projeto independente que respeita sua privacidade. Se você quiser valorizar o trabalho, leia os livros e conheça os outros projetos na minha página de autor.")
                             color: App.Theme.textMuted
                             font.family: App.Theme.uiFont
                             font.pixelSize: App.Theme.bodySize
@@ -195,7 +195,7 @@ Item {
                                 spacing: 3
 
                                 Text {
-                                    text: "Autor e programador"
+                                    text: qsTranslate("App", "Autor e programador")
                                     color: App.Theme.textSoft
                                     font.family: App.Theme.uiFont
                                     font.pixelSize: App.Theme.captionSize
@@ -217,7 +217,7 @@ Item {
                                     font.pixelSize: App.Theme.bodySize
                                     font.weight: Font.DemiBold
                                     activeFocusOnTab: true
-                                    Accessible.name: "Abrir pedblan.github.io"
+                                    Accessible.name: qsTranslate("App", "Abrir pedblan.github.io")
                                     Accessible.role: Accessible.Link
                                     Keys.onReturnPressed: root.callBackend(
                                                               "openExternalUrl",
@@ -236,7 +236,7 @@ Item {
                                 }
                             }
                             Components.AppButton {
-                                text: "Clique para conhecer"
+                                text: qsTranslate("App", "Clique para conhecer")
                                 variant: "primary"
                                 onClicked: root.callBackend(
                                                "openExternalUrl",
@@ -254,7 +254,7 @@ Item {
 
                 Text {
                     Layout.fillWidth: true
-                    text: "Software e licenças"
+                    text: qsTranslate("App", "Software e licenças")
                     color: App.Theme.text
                     font.family: App.Theme.displayFont
                     font.pixelSize: 19
@@ -262,7 +262,7 @@ Item {
                 }
                 Text {
                     Layout.fillWidth: true
-                    text: "São Francisco é software de código aberto sob licença MIT. Componentes e fontes de terceiros conservam suas próprias licenças."
+                    text: qsTranslate("App", "São Francisco é software de código aberto sob licença MIT. Componentes e fontes de terceiros conservam suas próprias licenças.")
                     color: App.Theme.textMuted
                     font.family: App.Theme.uiFont
                     font.pixelSize: App.Theme.bodySize
@@ -271,7 +271,7 @@ Item {
                 }
                 Text {
                     Layout.fillWidth: true
-                    text: "Jost e Source Sans 3 acompanham a identidade visual sob a SIL Open Font License."
+                    text: qsTranslate("App", "Jost e Source Sans 3 acompanham a identidade visual sob a SIL Open Font License.")
                     color: App.Theme.textMuted
                     font.family: App.Theme.uiFont
                     font.pixelSize: App.Theme.bodySize
@@ -279,7 +279,7 @@ Item {
                     wrapMode: Text.WordWrap
                 }
                 Components.AppButton {
-                    text: "Ver avisos de terceiros"
+                    text: qsTranslate("App", "Ver avisos de terceiros")
                     variant: "ghost"
                     compact: true
                     Layout.alignment: Qt.AlignLeft
@@ -319,7 +319,7 @@ Item {
 
         contentItem: ColumnLayout {
             spacing: 0
-            Accessible.name: "Avisos de terceiros"
+            Accessible.name: qsTranslate("App", "Avisos de terceiros")
 
             Rectangle {
                 Layout.fillWidth: true
@@ -342,7 +342,7 @@ Item {
 
                     Text {
                         Layout.fillWidth: true
-                        text: "Avisos de terceiros"
+                        text: qsTranslate("App", "Avisos de terceiros")
                         color: App.Theme.text
                         font.family: App.Theme.displayFont
                         font.pixelSize: 21
@@ -354,7 +354,7 @@ Item {
                         objectName: "thirdPartyNoticesCloseIcon"
                         implicitWidth: 40
                         implicitHeight: 40
-                        Accessible.name: "Fechar avisos de terceiros"
+                        Accessible.name: qsTranslate("App", "Fechar avisos de terceiros")
                         onClicked: noticesDialog.close()
                         contentItem: Components.Icon {
                             anchors.centerIn: parent
@@ -391,7 +391,7 @@ Item {
                 contentHeight: noticesText.implicitHeight + 44
                 boundsBehavior: Flickable.StopAtBounds
                 activeFocusOnTab: true
-                Accessible.name: "Conteúdo dos avisos de terceiros"
+                Accessible.name: qsTranslate("App", "Conteúdo dos avisos de terceiros")
                 Keys.onPressed: event => root.handleScrollKey(event, noticeScroll)
 
                 Text {
@@ -402,7 +402,7 @@ Item {
                     width: noticeScroll.width - 44
                     text: String(root.backendValue(
                                      "thirdPartyNoticesMarkdown",
-                                     "# Avisos de terceiros\n\nConteúdo indisponível."))
+                                     qsTranslate("App", "# Avisos de terceiros\n\nConteúdo indisponível.")))
                     textFormat: Text.MarkdownText
                     color: App.Theme.text
                     font.family: App.Theme.uiFont
@@ -435,7 +435,7 @@ Item {
                 }
                 Components.AppButton {
                     objectName: "thirdPartyNoticesCloseButton"
-                    text: "Fechar"
+                    text: qsTranslate("App", "Fechar")
                     variant: "secondary"
                     onClicked: noticesDialog.close()
                 }

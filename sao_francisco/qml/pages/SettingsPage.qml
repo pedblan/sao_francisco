@@ -46,7 +46,7 @@ Item {
             geminiKey.clear()
             dirty = false
             if (shell)
-                shell.showToast("Configurações salvas.")
+                shell.showToast(qsTranslate("App", "Configurações salvas."))
         }
     }
 
@@ -71,17 +71,29 @@ Item {
     function testProvider(provider, field) {
         const key = field.text.trim()
         if (provider === "openai")
-            openAiStatus = "Verificando…"
+            openAiStatus = "checking"
         else
-            geminiStatus = "Verificando…"
+            geminiStatus = "checking"
         const result = callBackend("testApiKey", [provider, key], null)
         if (result !== null) {
-            const label = result === true ? "Chave válida" : String(result)
+            const label = result === true ? "valid" : String(result)
             if (provider === "openai")
                 openAiStatus = label
             else
                 geminiStatus = label
         }
+    }
+
+    function statusText(status) {
+        // Track locale changes without changing draft settings or raw error data.
+        const locale = backendValue("interfaceLanguage", "en-US")
+        if (status === "checking")
+            return qsTranslate("App", "Verificando…")
+        if (status === "valid")
+            return qsTranslate("App", "Chave válida")
+        if (status === "invalid")
+            return qsTranslate("App", "Não foi possível validar")
+        return callBackend("translateMessage", [status], status)
     }
 
     onShellChanged: loadSettings()
@@ -102,7 +114,7 @@ Item {
         flickableDirection: Flickable.VerticalFlick
         boundsBehavior: Flickable.StopAtBounds
         activeFocusOnTab: true
-        Accessible.name: "Conteúdo das Configurações"
+        Accessible.name: qsTranslate("App", "Conteúdo das Configurações")
         Keys.onPressed: event => root.handleScrollKey(event, settingsScroll)
 
         Rectangle {
@@ -128,8 +140,38 @@ Item {
 
             Components.PageHeader {
                 Layout.fillWidth: true
-                title: "Configurações"
-                description: "Cadastre as chaves dos provedores e escolha como o São Francisco deve guardar e retomar seu trabalho."
+                title: qsTranslate("App", "Configurações")
+                description: qsTranslate("App", "Cadastre as chaves dos provedores e escolha como o São Francisco deve guardar e retomar seu trabalho.")
+            }
+
+            Components.AppCard {
+                Layout.fillWidth: true
+                padding: 22
+                Text {
+                    text: qsTranslate("App", "Idioma da interface")
+                    font.family: App.Theme.displayFont
+                    font.pixelSize: 19
+                    color: App.Theme.text
+                }
+                ComboBox {
+                    id: interfaceLanguage
+                    objectName: "interfaceLanguageSelector"
+                    Layout.fillWidth: true
+                    model: root.backendValue("interfaceLanguages", [])
+                    textRole: "name"
+                    valueRole: "id"
+                    currentIndex: Math.max(0, indexOfValue(
+                        root.backendValue("interfaceLanguage", "en-US")))
+                    Accessible.name: qsTranslate("App", "Idioma da interface")
+                    onActivated: root.callBackend("setInterfaceLanguage", [currentValue], false)
+                }
+                Text {
+                    Layout.fillWidth: true
+                    text: qsTranslate("App", "A interface muda imediatamente. O idioma da transcrição não é alterado.")
+                    wrapMode: Text.WordWrap
+                    color: App.Theme.textMuted
+                    font.family: App.Theme.uiFont
+                }
             }
 
             Components.AppCard {
@@ -157,7 +199,7 @@ Item {
                         spacing: 2
                         Text {
                             Layout.fillWidth: true
-                            text: "Chaves de API"
+                            text: qsTranslate("App", "Chaves de API")
                             color: App.Theme.text
                             font.family: App.Theme.displayFont
                             font.pixelSize: 19
@@ -165,7 +207,7 @@ Item {
                         }
                         Text {
                             Layout.fillWidth: true
-                            text: "As chaves são guardadas pelo cofre seguro do sistema. O valor completo não volta a ser exibido."
+                            text: qsTranslate("App", "As chaves são guardadas pelo cofre seguro do sistema. O valor completo não volta a ser exibido.")
                             color: App.Theme.textMuted
                             font.family: App.Theme.uiFont
                             font.pixelSize: 12
@@ -173,7 +215,7 @@ Item {
                         }
                     }
                     Components.AppButton {
-                        text: "Como obter"
+                        text: qsTranslate("App", "Como obter")
                         variant: "ghost"
                         compact: true
                         onClicked: {
@@ -210,8 +252,9 @@ Item {
                             }
                             Components.StatusPill {
                                 visible: root.openAiStatus.length > 0
-                                text: root.openAiStatus
-                                tone: root.openAiStatus === "Chave válida"
+                                objectName: "openAiKeyStatus"
+                                text: root.statusText(root.openAiStatus)
+                                tone: root.openAiStatus === "valid"
                                       ? "success"
                                       : "neutral"
                             }
@@ -221,6 +264,9 @@ Item {
                             spacing: 8
                             TextField {
                                 id: openAiKey
+                                objectName: "openAiKeyInput"
+                                LayoutMirroring.enabled: false
+                                horizontalAlignment: TextInput.AlignLeft
                                 Layout.fillWidth: true
                                 implicitHeight: 38
                                 echoMode: TextInput.Password
@@ -229,11 +275,11 @@ Item {
                                 selectByMouse: true
                                 font.family: App.Theme.uiFont
                                 font.pixelSize: App.Theme.bodySize
-                                Accessible.name: "Chave da API da OpenAI"
+                                Accessible.name: qsTranslate("App", "Chave da API da OpenAI")
                                 onTextChanged: root.dirty = true
                             }
                             Components.AppButton {
-                                text: "Verificar"
+                                text: qsTranslate("App", "Verificar")
                                 variant: "secondary"
                                 compact: true
                                 onClicked: root.testProvider("openai", openAiKey)
@@ -268,8 +314,8 @@ Item {
                             }
                             Components.StatusPill {
                                 visible: root.geminiStatus.length > 0
-                                text: root.geminiStatus
-                                tone: root.geminiStatus === "Chave válida"
+                                text: root.statusText(root.geminiStatus)
+                                tone: root.geminiStatus === "valid"
                                       ? "success"
                                       : "neutral"
                             }
@@ -279,19 +325,22 @@ Item {
                             spacing: 8
                             TextField {
                                 id: geminiKey
+                                objectName: "geminiKeyInput"
+                                LayoutMirroring.enabled: false
+                                horizontalAlignment: TextInput.AlignLeft
                                 Layout.fillWidth: true
                                 implicitHeight: 38
                                 echoMode: TextInput.Password
                                 passwordCharacter: "•"
-                                placeholderText: "Cole a chave do Google AI Studio"
+                                placeholderText: qsTranslate("App", "Cole a chave do Google AI Studio")
                                 selectByMouse: true
                                 font.family: App.Theme.uiFont
                                 font.pixelSize: App.Theme.bodySize
-                                Accessible.name: "Chave da API do Google Gemini"
+                                Accessible.name: qsTranslate("App", "Chave da API do Google Gemini")
                                 onTextChanged: root.dirty = true
                             }
                             Components.AppButton {
-                                text: "Verificar"
+                                text: qsTranslate("App", "Verificar")
                                 variant: "secondary"
                                 compact: true
                                 onClicked: root.testProvider("gemini", geminiKey)
@@ -308,7 +357,7 @@ Item {
 
                 Text {
                     Layout.fillWidth: true
-                    text: "Arquivos e continuidade"
+                    text: qsTranslate("App", "Arquivos e continuidade")
                     color: App.Theme.text
                     font.family: App.Theme.displayFont
                     font.pixelSize: 19
@@ -319,7 +368,7 @@ Item {
                     Layout.fillWidth: true
                     spacing: 6
                     Text {
-                        text: "Pasta de saída padrão"
+                        text: qsTranslate("App", "Pasta de saída padrão")
                         color: App.Theme.text
                         font.family: App.Theme.uiFont
                         font.pixelSize: App.Theme.bodySize
@@ -330,16 +379,18 @@ Item {
                         spacing: 8
                         TextField {
                             id: outputFolder
+                            LayoutMirroring.enabled: false
+                            horizontalAlignment: TextInput.AlignLeft
                             Layout.fillWidth: true
-                            placeholderText: "Pasta da fonte; Documentos para URLs"
+                            placeholderText: qsTranslate("App", "Pasta da fonte; Documentos para URLs")
                             selectByMouse: true
                             font.family: App.Theme.uiFont
                             font.pixelSize: App.Theme.bodySize
-                            Accessible.name: "Pasta de saída padrão"
+                            Accessible.name: qsTranslate("App", "Pasta de saída padrão")
                             onTextChanged: root.dirty = true
                         }
                         Components.AppButton {
-                            text: "Escolher…"
+                            text: qsTranslate("App", "Escolher…")
                             variant: "secondary"
                             compact: true
                             onClicked: {
@@ -355,7 +406,7 @@ Item {
                 CheckBox {
                     id: autoResume
                     Layout.fillWidth: true
-                    text: "Retomar automaticamente tarefas interrompidas"
+                    text: qsTranslate("App", "Retomar automaticamente tarefas interrompidas")
                     checked: true
                     font.family: App.Theme.uiFont
                     Accessible.name: text
@@ -365,7 +416,7 @@ Item {
                 CheckBox {
                     id: notifications
                     Layout.fillWidth: true
-                    text: "Avisar quando uma transcrição terminar"
+                    text: qsTranslate("App", "Avisar quando uma transcrição terminar")
                     checked: true
                     font.family: App.Theme.uiFont
                     Accessible.name: text
@@ -378,13 +429,13 @@ Item {
                 spacing: 12
                 Text {
                     Layout.fillWidth: true
-                    text: root.dirty ? "Há alterações ainda não salvas." : ""
+                    text: root.dirty ? qsTranslate("App", "Há alterações ainda não salvas.") : ""
                     color: App.Theme.textMuted
                     font.family: App.Theme.uiFont
                     font.pixelSize: 12
                 }
                 Components.AppButton {
-                    text: "Salvar configurações"
+                    text: qsTranslate("App", "Salvar configurações")
                     enabled: root.dirty
                     onClicked: root.saveSettings()
                 }
@@ -405,9 +456,15 @@ Item {
         function onSettingsChanged() {
             root.loadSettings()
         }
+        function onInterfaceLanguageChanged() {
+            const settings = root.backendValue("settings", {})
+            openAiKey.placeholderText = settings.openAiKeyMasked
+                    || "sk-…"
+            geminiKey.placeholderText = settings.geminiKeyMasked
+                    || qsTranslate("App", "Cole a chave do Google AI Studio")
+        }
         function onApiKeyTestFinished(provider, ok, message) {
-            const label = ok ? "Chave válida"
-                             : String(message || "Não foi possível validar")
+            const label = ok ? "valid" : String(message || "invalid")
             if (provider === "openai")
                 root.openAiStatus = label
             else if (provider === "gemini")

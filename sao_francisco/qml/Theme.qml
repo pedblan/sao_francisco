@@ -45,11 +45,11 @@ QtObject {
 
     function routeTitle(route) {
         const titles = {
-            "transcribe": "Transcrever",
-            "history": "Histórico",
-            "settings": "Configurações",
-            "help": "Ajuda",
-            "about": "Sobre"
+            "transcribe": qsTranslate("App", "Transcrever"),
+            "history": qsTranslate("App", "Histórico"),
+            "settings": qsTranslate("App", "Configurações"),
+            "help": qsTranslate("App", "Ajuda"),
+            "about": qsTranslate("App", "Sobre")
         }
         return titles[route] || "São Francisco"
     }

@@ -11,6 +11,7 @@ Rectangle {
     property bool collapsed: false
     property string activeRoute: "transcribe"
     property string versionLabel: ""
+    readonly property bool rtl: Qt.application.layoutDirection === Qt.RightToLeft
     signal navigate(string route)
     signal toggleCollapse()
 
@@ -23,40 +24,40 @@ Rectangle {
     }
 
     readonly property var workItems: [
-        { "label": "Transcrever", "route": "transcribe", "icon": "transcribe" },
-        { "label": "Histórico", "route": "history", "icon": "history" }
+        { "label": qsTranslate("App", "Transcrever"), "route": "transcribe", "icon": "transcribe" },
+        { "label": qsTranslate("App", "Histórico"), "route": "history", "icon": "history" }
     ]
     readonly property var supportItems: [
-        { "label": "Configurações", "route": "settings", "icon": "settings" },
-        { "label": "Ajuda", "route": "help", "icon": "help" },
-        { "label": "Sobre", "route": "about", "icon": "info" }
+        { "label": qsTranslate("App", "Configurações"), "route": "settings", "icon": "settings" },
+        { "label": qsTranslate("App", "Ajuda"), "route": "help", "icon": "help" },
+        { "label": qsTranslate("App", "Sobre"), "route": "about", "icon": "info" }
     ]
 
     component NavigationButton: Button {
         id: navigationButton
 
         required property var entry
+        objectName: "sidebarNavigation-" + entry.route
         readonly property bool selected: root.activeRoute === entry.route
 
         Layout.fillWidth: true
         implicitHeight: 40
         hoverEnabled: true
         padding: 0
+        leftPadding: 11
+        rightPadding: 11
         activeFocusOnTab: true
         Accessible.name: entry.label
-        Accessible.description: selected ? "Página atual" : "Abrir " + entry.label
+        Accessible.description: selected ? qsTranslate("App", "Página atual") : qsTranslate("App", "Abrir ") + entry.label
         ToolTip.visible: root.collapsed && hovered
         ToolTip.text: entry.label
         onClicked: root.navigate(entry.route)
 
         contentItem: RowLayout {
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.leftMargin: 11
-            anchors.rightMargin: 11
             spacing: 11
 
             Icon {
+                objectName: "navigationIcon-" + navigationButton.entry.route
                 Layout.preferredWidth: 19
                 Layout.preferredHeight: 19
                 name: navigationButton.entry.icon
@@ -118,7 +119,7 @@ Rectangle {
                     source: Qt.resolvedUrl("../../assets/branding/sao-francisco-bauhaus.svg")
                     fillMode: Image.PreserveAspectFit
                     mipmap: true
-                    Accessible.name: "Símbolo Bauhaus de São Francisco"
+                    Accessible.name: qsTranslate("App", "Símbolo Bauhaus de São Francisco")
                     Accessible.role: Accessible.Graphic
                 }
 
@@ -138,7 +139,7 @@ Rectangle {
                     }
                     Text {
                         Layout.fillWidth: true
-                    text: "Abençoe sua transcrição"
+                        text: qsTranslate("App", "Abençoe sua transcrição")
                         color: App.Theme.textMuted
                         font.family: App.Theme.uiFont
                         font.pixelSize: 10
@@ -150,7 +151,7 @@ Rectangle {
 
         Text {
             visible: !root.collapsed
-            text: "TRABALHO"
+            text: qsTranslate("App", "TRABALHO")
             color: App.Theme.textSoft
             font.family: App.Theme.uiFont
             font.pixelSize: 9
@@ -193,28 +194,27 @@ Rectangle {
             implicitHeight: 40
             hoverEnabled: true
             padding: 0
+            leftPadding: 11
+            rightPadding: 11
             Accessible.name: root.collapsed
-                             ? "Mostrar barra lateral"
-                             : "Recolher barra lateral"
+                             ? qsTranslate("App", "Mostrar barra lateral")
+                             : qsTranslate("App", "Recolher barra lateral")
             ToolTip.visible: root.collapsed && hovered
             ToolTip.text: Accessible.name
             onClicked: root.toggleCollapse()
 
             contentItem: RowLayout {
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.leftMargin: 11
                 spacing: 11
 
                 Icon {
-                    name: root.collapsed ? "expand" : "collapse"
+                    name: root.collapsed !== root.rtl ? "expand" : "collapse"
                     iconSize: 19
                     iconColor: App.Theme.textMuted
                 }
 
                 Text {
                     visible: !root.collapsed
-                    text: "Recolher"
+                    text: qsTranslate("App", "Recolher")
                     color: App.Theme.textMuted
                     font.family: App.Theme.uiFont
                     font.pixelSize: App.Theme.bodySize

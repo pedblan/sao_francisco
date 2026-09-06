@@ -3,6 +3,12 @@
 Aplicativo desktop para transformar áudio e vídeo em texto, inclusive mídias longas e
 URLs públicas do YouTube e serviços compatíveis.
 
+Preparação comercial multilíngue: [estado e roteiro de lançamento](LANCAMENTO.md).
+O código continua MIT; preço-base dos downloads oficiais definido em US$ 5, sem créditos
+de API incluídos. A primeira abertura usa inglês; escolha português, francês, espanhol,
+alemão, italiano, russo, chinês simplificado ou árabe em **Settings → Interface language**.
+Essa escolha não modifica o idioma das transcrições. A preparação não é uma publicação.
+
 ![São Francisco em estilo Bauhaus](sao_francisco/assets/branding/sao-francisco-bauhaus.png)
 
 O São Francisco prepara o áudio com FFmpeg, procura pausas naturais, divide a gravação em
